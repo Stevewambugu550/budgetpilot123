@@ -101,6 +101,8 @@ async function signin(sql, { email, password }) {
   const user = rows[0]
   if (!user || hashPwd(password, user.salt) !== user.password_hash)
     throw err('Invalid email or password', 401)
+  if (user.active === false)
+    throw err('This account has been suspended. Contact an administrator.', 403)
 
   // Delete expired sessions for this user (housekeeping)
   await sql`DELETE FROM app_sessions WHERE user_id = ${user.id} AND expires_at <= now()`
@@ -154,11 +156,15 @@ async function dispatch(sql, session, action, payload) {
     case 'importAll': return importAll(sql, userId, payload)
     case 'clearAll':  return clearAll(sql, userId)
 
-    case 'adminLoadAll':       return adminLoadAll(sql, session)
-    case 'adminLoadUser':      return adminLoadUser(sql, session, payload)
-    case 'adminChangeRole':    return adminChangeRole(sql, session, payload)
-    case 'adminDeleteTx':      return adminDeleteTx(sql, session, payload)
-    case 'adminDeleteAccount': return adminDeleteAccount(sql, session, payload)
+    case 'adminLoadAll':          return adminLoadAll(sql, session)
+    case 'adminLoadUser':         return adminLoadUser(sql, session, payload)
+    case 'adminChangeRole':       return adminChangeRole(sql, session, payload)
+    case 'adminDeleteTx':         return adminDeleteTx(sql, session, payload)
+    case 'adminDeleteAccount':    return adminDeleteAccount(sql, session, payload)
+    case 'adminSetUserActive':    return adminSetUserActive(sql, session, payload)
+    case 'adminDeleteUser':       return adminDeleteUser(sql, session, payload)
+    case 'adminResetPassword':    return adminResetPassword(sql, session, payload)
+    case 'adminLoadAuditLog':     return adminLoadAuditLog(sql, session)
 
     default: throw err(`Unknown action: ${action}`, 400)
   }
@@ -418,15 +424,38 @@ async function clearAll(sql, userId) {
 }
 
 // ─── Admin ────────────────────────────────────────────────────────────
+// Permission model:
+//   it         — read only, can view everything, cannot mutate anything
+//   admin      — full CRUD on users/data, can change roles (except granting/revoking superadmin),
+//                can suspend/reactivate users, cannot permanently delete a user account
+//   superadmin — everything admin can do, plus granting/revoking superadmin and permanently deleting users
+const CAN_VIEW   = ['it', 'admin', 'superadmin']
+const CAN_EDIT   = ['admin', 'superadmin']
+const CAN_DELETE_USER = ['superadmin']
+
 function requireAdmin(session) {
-  if (!['admin','superadmin','it'].includes(session.role))
-    throw err('Forbidden', 403)
+  if (!CAN_VIEW.includes(session.role)) throw err('Forbidden', 403)
+}
+function requireEdit(session) {
+  if (!CAN_EDIT.includes(session.role)) throw err('Read-only role: this account cannot make changes', 403)
+}
+function requireSuperadmin(session) {
+  if (!CAN_DELETE_USER.includes(session.role)) throw err('Only a superadmin can perform this action', 403)
+}
+
+async function logAudit(sql, session, action, target = {}, details = '') {
+  try {
+    await sql`
+      INSERT INTO admin_audit_log (actor_id, actor_email, action, target_id, target_email, details)
+      VALUES (${session.user_id}, ${session.email}, ${action}, ${target.id ?? null}, ${target.email ?? null}, ${details})
+    `
+  } catch (e) { console.error('[audit log]', e.message) }
 }
 
 async function adminLoadAll(sql, session) {
   requireAdmin(session)
   const [profiles, transactions] = await Promise.all([
-    sql`SELECT id, email, full_name AS "fullName", role, created_at AS "createdAt" FROM app_users ORDER BY created_at DESC`,
+    sql`SELECT id, email, full_name AS "fullName", role, active, created_at AS "createdAt" FROM app_users ORDER BY created_at DESC`,
     sql`SELECT * FROM transactions ORDER BY created_at DESC LIMIT 500`,
   ])
   return { profiles, transactions: transactions.map(mapTx) }
@@ -445,21 +474,80 @@ async function adminLoadUser(sql, session, { targetUserId }) {
 }
 
 async function adminChangeRole(sql, session, { targetUserId, role }) {
-  requireAdmin(session)
+  requireEdit(session)
+  if (targetUserId === session.user_id) throw err("You can't change your own role", 400)
+  if (role === 'superadmin' || (await sql`SELECT role FROM app_users WHERE id = ${targetUserId}`)[0]?.role === 'superadmin') {
+    requireSuperadmin(session)
+  }
+  const [target] = await sql`SELECT email FROM app_users WHERE id = ${targetUserId}`
   await Promise.all([
     sql`UPDATE app_users SET role = ${role} WHERE id = ${targetUserId}`,
     sql`UPDATE profiles  SET role = ${role} WHERE id = ${targetUserId}`,
   ])
+  await logAudit(sql, session, 'change_role', { id: targetUserId, email: target?.email }, `New role: ${role}`)
   return null
 }
 
 async function adminDeleteTx(sql, session, { txId, accountId, type, amount }) {
-  requireAdmin(session)
+  requireEdit(session)
+  await logAudit(sql, session, 'delete_transaction', { id: txId }, `${type} ${amount}`)
   return deleteTransaction(sql, { id: txId, accountId, type, amount })
 }
 
 async function adminDeleteAccount(sql, session, { accountId }) {
-  requireAdmin(session)
+  requireEdit(session)
+  await logAudit(sql, session, 'delete_account', { id: accountId })
   await sql`DELETE FROM accounts WHERE id = ${accountId}::uuid`
   return null
+}
+
+async function adminSetUserActive(sql, session, { targetUserId, active }) {
+  requireEdit(session)
+  if (targetUserId === session.user_id) throw err("You can't suspend your own account", 400)
+  const [target] = await sql`SELECT email, role FROM app_users WHERE id = ${targetUserId}`
+  if (target?.role === 'superadmin') requireSuperadmin(session)
+  await sql`UPDATE app_users SET active = ${!!active} WHERE id = ${targetUserId}`
+  if (!active) await sql`DELETE FROM app_sessions WHERE user_id = ${targetUserId}`
+  await logAudit(sql, session, active ? 'reactivate_user' : 'suspend_user', { id: targetUserId, email: target?.email })
+  return null
+}
+
+async function adminDeleteUser(sql, session, { targetUserId }) {
+  requireSuperadmin(session)
+  if (targetUserId === session.user_id) throw err("You can't delete your own account", 400)
+  const [target] = await sql`SELECT email FROM app_users WHERE id = ${targetUserId}`
+  await Promise.all([
+    sql`DELETE FROM payments     WHERE user_id = ${targetUserId}`,
+    sql`DELETE FROM budgets      WHERE user_id = ${targetUserId}`,
+    sql`DELETE FROM transactions WHERE user_id = ${targetUserId}`,
+    sql`DELETE FROM goals        WHERE user_id = ${targetUserId}`,
+    sql`DELETE FROM people       WHERE user_id = ${targetUserId}`,
+    sql`DELETE FROM accounts     WHERE user_id = ${targetUserId}`,
+  ])
+  await sql`DELETE FROM profiles     WHERE id = ${targetUserId}`
+  await sql`DELETE FROM app_sessions WHERE user_id = ${targetUserId}`
+  await sql`DELETE FROM app_users    WHERE id = ${targetUserId}`
+  await logAudit(sql, session, 'delete_user', { id: targetUserId, email: target?.email })
+  return null
+}
+
+async function adminResetPassword(sql, session, { targetUserId }) {
+  requireEdit(session)
+  const [target] = await sql`SELECT email FROM app_users WHERE id = ${targetUserId}`
+  if (!target) throw err('User not found', 404)
+  const tempPassword = randomBytes(6).toString('hex')
+  const salt = newId()
+  await sql`UPDATE app_users SET salt = ${salt}, password_hash = ${hashPwd(tempPassword, salt)} WHERE id = ${targetUserId}`
+  await sql`DELETE FROM app_sessions WHERE user_id = ${targetUserId}`
+  await logAudit(sql, session, 'reset_password', { id: targetUserId, email: target.email })
+  return { tempPassword }
+}
+
+async function adminLoadAuditLog(sql, session) {
+  requireAdmin(session)
+  const rows = await sql`SELECT * FROM admin_audit_log ORDER BY created_at DESC LIMIT 300`
+  return rows.map(r => ({
+    id: r.id, actorEmail: r.actor_email, action: r.action,
+    targetEmail: r.target_email, details: r.details, createdAt: r.created_at,
+  }))
 }

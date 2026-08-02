@@ -2,6 +2,7 @@ import { useEffect, useMemo, useState } from 'react'
 import {
   Shield, Search, ChevronLeft, Mail, Calendar, Wallet, ArrowUpCircle, ArrowDownCircle,
   Users as UsersIcon, FileSpreadsheet, Trash2, Activity, DollarSign, TrendingUp, LogOut,
+  UserX, UserCheck, KeyRound, ClipboardList, Lock, ShieldCheck, Check, X as XIcon,
 } from 'lucide-react'
 import { callApi } from '../lib/identity'
 import { useAuth } from '../context/AuthContext'
@@ -17,6 +18,19 @@ const ROLES = [
 ]
 
 const roleMeta = (r) => ROLES.find(x => x.value === (r || 'user').toLowerCase()) || ROLES[0]
+
+// Capability matrix shown on the Permissions tab. Kept in sync with the
+// authorization checks enforced server-side in netlify/functions/api.mjs.
+const PERMISSIONS = [
+  { label: 'View users, transactions, and activity', user: false, it: true, admin: true, superadmin: true },
+  { label: 'Export user data to Excel',              user: false, it: true, admin: true, superadmin: true },
+  { label: 'Edit accounts, transactions, and budgets',user: false, it: false, admin: true, superadmin: true },
+  { label: 'Change a user\u2019s role (up to Admin)', user: false, it: false, admin: true, superadmin: true },
+  { label: 'Suspend or reactivate a user account',    user: false, it: false, admin: true, superadmin: true },
+  { label: 'Reset a user\u2019s password',            user: false, it: false, admin: true, superadmin: true },
+  { label: 'Grant or revoke Superadmin role',         user: false, it: false, admin: false, superadmin: true },
+  { label: 'Permanently delete a user account',       user: false, it: false, admin: false, superadmin: true },
+]
 
 const RoleSelect = ({ value, onChange, allowSuperadmin, disabled, currentUserId, targetUserId }) => {
   const isSelf = currentUserId === targetUserId
@@ -37,13 +51,15 @@ const RoleSelect = ({ value, onChange, allowSuperadmin, disabled, currentUserId,
 
 const Admin = () => {
   const { isAdmin, isSuperAdmin, isIT, canViewAdmin, role: myRole, loading, user, signOut } = useAuth()
-  // IT is read-only; admin can edit but not change roles to/from superadmin; superadmin can do anything.
+  // IT is read-only; admin can edit but not change roles to/from superadmin or delete users; superadmin can do anything.
   const canEdit = isAdmin // admin or superadmin
   const canChangeRoles = isAdmin // any admin/superadmin can change roles, but UI restricts targets below
+  const canDeleteUser = isSuperAdmin
   const [users, setUsers] = useState([])
   const [allTx, setAllTx] = useState([])
+  const [auditLog, setAuditLog] = useState([])
   const [busy, setBusy] = useState(true)
-  const [tab, setTab] = useState('overview') // 'overview' | 'users' | 'activity'
+  const [tab, setTab] = useState('overview') // 'overview' | 'users' | 'activity' | 'permissions' | 'log'
   const [search, setSearch] = useState('')
   const [selected, setSelected] = useState(null)
   const [detail, setDetail] = useState(null)
@@ -121,6 +137,41 @@ const Admin = () => {
     } catch (e) { alert(e.message) }
   }
 
+  const toggleActive = async (u) => {
+    const next = u.active === false
+    if (!confirm(next ? `Reactivate ${u.email}?` : `Suspend ${u.email}? They will be logged out and unable to sign in.`)) return
+    try {
+      await callApi('adminSetUserActive', { targetUserId: u.id, active: next })
+      setUsers(us => us.map(x => x.id === u.id ? { ...x, active: next } : x))
+      if (selected?.id === u.id) setSelected({ ...selected, active: next })
+    } catch (e) { alert(e.message) }
+  }
+
+  const resetPassword = async (u) => {
+    if (!confirm(`Reset password for ${u.email}? A new temporary password will be generated and they will be logged out everywhere.`)) return
+    try {
+      const { tempPassword } = await callApi('adminResetPassword', { targetUserId: u.id })
+      alert(`New temporary password for ${u.email}:\n\n${tempPassword}\n\nShare this with the user securely. They should change it after logging in.`)
+    } catch (e) { alert(e.message) }
+  }
+
+  const deleteUserAccount = async (u) => {
+    if (!confirm(`Permanently delete ${u.email} and ALL of their data? This cannot be undone.`)) return
+    if (!confirm('Really sure? Type OK to confirm this is final.')) return
+    try {
+      await callApi('adminDeleteUser', { targetUserId: u.id })
+      setUsers(us => us.filter(x => x.id !== u.id))
+      if (selected?.id === u.id) { setSelected(null); setDetail(null) }
+    } catch (e) { alert(e.message) }
+  }
+
+  const loadAuditLog = async () => {
+    try {
+      const rows = await callApi('adminLoadAuditLog')
+      setAuditLog(rows || [])
+    } catch (e) { setErr(e.message) }
+  }
+
   // ─── Global stats ─────────────────────────────────────────
   const stats = useMemo(() => {
     const today = new Date().toISOString().slice(0, 10)
@@ -184,6 +235,9 @@ const Admin = () => {
               </p>
               <p className="text-xs text-slate-400 flex items-center gap-2 mt-0.5">
                 <Calendar className="w-3 h-3" /> Joined {fmtDate(selected.createdAt)}
+                <span className={`chip ${selected.active === false ? 'bg-rose-100 text-rose-700' : 'bg-emerald-100 text-emerald-700'}`}>
+                  {selected.active === false ? 'Suspended' : 'Active'}
+                </span>
               </p>
             </div>
             <div className="flex flex-col gap-2">
@@ -205,6 +259,22 @@ const Admin = () => {
                   currentUserId={user?.id}
                   targetUserId={selected.id}
                 />
+              )}
+              {canEdit && user?.id !== selected.id && (
+                <div className="flex gap-2">
+                  <button onClick={() => toggleActive(selected)} className="btn bg-white/10 text-white hover:bg-white/20 flex-1">
+                    {selected.active === false ? <UserCheck className="w-4 h-4" /> : <UserX className="w-4 h-4" />}
+                    {selected.active === false ? 'Reactivate' : 'Suspend'}
+                  </button>
+                  <button onClick={() => resetPassword(selected)} className="btn bg-white/10 text-white hover:bg-white/20 flex-1">
+                    <KeyRound className="w-4 h-4" /> Reset password
+                  </button>
+                </div>
+              )}
+              {canDeleteUser && user?.id !== selected.id && (
+                <button onClick={() => deleteUserAccount(selected)} className="btn bg-rose-600 text-white hover:bg-rose-700">
+                  <Trash2 className="w-4 h-4" /> Delete account
+                </button>
               )}
             </div>
           </div>
@@ -374,15 +444,17 @@ const Admin = () => {
       </div>
 
       {/* Tabs */}
-      <div className="flex gap-1 bg-slate-100 p-1 rounded-xl w-fit">
+      <div className="flex gap-1 bg-slate-100 p-1 rounded-xl w-fit flex-wrap">
         {[
-          { id: 'overview', label: 'Overview',     icon: Activity },
-          { id: 'users',    label: 'Users',        icon: UsersIcon },
-          { id: 'activity', label: 'All activity', icon: TrendingUp },
+          { id: 'overview',    label: 'Overview',     icon: Activity },
+          { id: 'users',       label: 'Users',        icon: UsersIcon },
+          { id: 'activity',    label: 'All activity', icon: TrendingUp },
+          { id: 'permissions', label: 'Permissions',  icon: Lock },
+          { id: 'log',         label: 'Audit log',    icon: ClipboardList },
         ].map(t => (
           <button
             key={t.id}
-            onClick={() => setTab(t.id)}
+            onClick={() => { setTab(t.id); if (t.id === 'log') loadAuditLog() }}
             className={`flex items-center gap-2 px-3 py-1.5 rounded-lg text-sm font-semibold transition ${
               tab === t.id ? 'bg-white shadow-sm text-slate-900' : 'text-slate-500'
             }`}
@@ -479,13 +551,17 @@ const Admin = () => {
                       <tr className="text-left text-xs font-bold uppercase tracking-wide text-slate-400 bg-slate-50 border-b border-slate-100">
                         <th className="py-3 px-4">User</th>
                         <th className="px-2 hidden md:table-cell">Joined</th>
+                        <th className="px-2">Status</th>
                         <th className="px-2">Role</th>
-                        <th className="px-4 text-right"></th>
+                        <th className="px-4 text-right">Actions</th>
                       </tr>
                     </thead>
                     <tbody className="divide-y divide-slate-100">
-                      {filteredUsers.map(u => (
-                        <tr key={u.id} className="hover:bg-slate-50 transition-colors">
+                      {filteredUsers.map(u => {
+                        const isSuspended = u.active === false
+                        const isSelf = user?.id === u.id
+                        return (
+                        <tr key={u.id} className={`hover:bg-slate-50 transition-colors ${isSuspended ? 'opacity-60' : ''}`}>
                           <td className="py-3 px-4">
                             <button onClick={() => loadDetail(u)} className="flex items-center gap-3 text-left">
                               <div className="w-9 h-9 rounded-full bg-gradient-to-br from-brand-400 to-brand-700 text-white flex items-center justify-center font-black text-sm flex-shrink-0">
@@ -498,6 +574,11 @@ const Admin = () => {
                             </button>
                           </td>
                           <td className="px-2 text-xs text-slate-400 hidden md:table-cell whitespace-nowrap">{fmtDate(u.createdAt)}</td>
+                          <td className="px-2">
+                            <span className={`chip ${isSuspended ? 'bg-rose-100 text-rose-700' : 'bg-emerald-100 text-emerald-700'}`}>
+                              {isSuspended ? 'Suspended' : 'Active'}
+                            </span>
+                          </td>
                           <td className="px-2">
                             {canChangeRoles ? (
                               <RoleSelect
@@ -512,10 +593,40 @@ const Admin = () => {
                             )}
                           </td>
                           <td className="px-4 text-right">
-                            <button onClick={() => loadDetail(u)} className="btn-ghost text-xs px-2 py-1">View</button>
+                            <div className="flex items-center justify-end gap-1">
+                              <button onClick={() => loadDetail(u)} className="btn-ghost text-xs px-2 py-1">View</button>
+                              {canEdit && !isSelf && (
+                                <>
+                                  <button
+                                    onClick={() => toggleActive(u)}
+                                    title={isSuspended ? 'Reactivate' : 'Suspend'}
+                                    className="p-1.5 rounded-lg text-slate-400 hover:bg-amber-50 hover:text-amber-600"
+                                  >
+                                    {isSuspended ? <UserCheck className="w-3.5 h-3.5" /> : <UserX className="w-3.5 h-3.5" />}
+                                  </button>
+                                  <button
+                                    onClick={() => resetPassword(u)}
+                                    title="Reset password"
+                                    className="p-1.5 rounded-lg text-slate-400 hover:bg-sky-50 hover:text-sky-600"
+                                  >
+                                    <KeyRound className="w-3.5 h-3.5" />
+                                  </button>
+                                </>
+                              )}
+                              {canDeleteUser && !isSelf && (
+                                <button
+                                  onClick={() => deleteUserAccount(u)}
+                                  title="Delete account permanently"
+                                  className="p-1.5 rounded-lg text-slate-400 hover:bg-rose-50 hover:text-rose-600"
+                                >
+                                  <Trash2 className="w-3.5 h-3.5" />
+                                </button>
+                              )}
+                            </div>
                           </td>
                         </tr>
-                      ))}
+                        )
+                      })}
                     </tbody>
                   </table>
                 )}
@@ -574,6 +685,87 @@ const Admin = () => {
                     <p className="text-xs text-slate-500 text-center mt-3">Showing first 200 of {allTx.length}.</p>
                   )}
                 </div>
+              )}
+            </div>
+          )}
+
+          {/* Permissions tab */}
+          {tab === 'permissions' && (
+            <div className="card overflow-hidden">
+              <div className="p-5 border-b border-slate-100">
+                <h3 className="font-bold flex items-center gap-2"><Lock className="w-4 h-4" /> Role permissions</h3>
+                <p className="text-sm text-slate-500 mt-1">
+                  What each role is allowed to do across the platform. Your current role is{' '}
+                  <span className={`chip ${roleMeta(myRole).chip}`}>{roleMeta(myRole).label}</span>.
+                </p>
+              </div>
+              <table className="w-full text-sm">
+                <thead>
+                  <tr className="text-left text-xs font-bold uppercase tracking-wide text-slate-400 bg-slate-50 border-b border-slate-100">
+                    <th className="py-3 px-4">Capability</th>
+                    {ROLES.map(r => (
+                      <th key={r.value} className="px-3 text-center">
+                        <span className={`chip ${r.chip}`}>{r.label}</span>
+                      </th>
+                    ))}
+                  </tr>
+                </thead>
+                <tbody className="divide-y divide-slate-100">
+                  {PERMISSIONS.map(p => (
+                    <tr key={p.label}>
+                      <td className="py-3 px-4 text-slate-700">{p.label}</td>
+                      {ROLES.map(r => (
+                        <td key={r.value} className="px-3 text-center">
+                          {p[r.value]
+                            ? <Check className="w-4 h-4 text-emerald-600 inline" />
+                            : <XIcon className="w-4 h-4 text-slate-300 inline" />}
+                        </td>
+                      ))}
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+              <div className="p-4 bg-slate-50 border-t border-slate-100 flex items-start gap-2 text-xs text-slate-500">
+                <ShieldCheck className="w-4 h-4 flex-shrink-0 mt-0.5" />
+                Every action taken by an admin, IT, or superadmin account is recorded in the audit log for accountability.
+              </div>
+            </div>
+          )}
+
+          {/* Audit log tab */}
+          {tab === 'log' && (
+            <div className="card overflow-hidden">
+              <div className="p-5 border-b border-slate-100">
+                <h3 className="font-bold flex items-center gap-2"><ClipboardList className="w-4 h-4" /> Audit log ({auditLog.length})</h3>
+                <p className="text-sm text-slate-500 mt-1">Every role change, suspension, password reset, and deletion performed by an admin.</p>
+              </div>
+              {auditLog.length === 0 ? (
+                <p className="p-10 text-center text-slate-500">No admin actions recorded yet.</p>
+              ) : (
+                <table className="w-full text-sm">
+                  <thead>
+                    <tr className="text-left text-xs font-bold uppercase tracking-wide text-slate-400 bg-slate-50 border-b border-slate-100">
+                      <th className="py-3 px-4">When</th>
+                      <th className="px-2">Actor</th>
+                      <th className="px-2">Action</th>
+                      <th className="px-2">Target</th>
+                      <th className="px-4">Details</th>
+                    </tr>
+                  </thead>
+                  <tbody className="divide-y divide-slate-100">
+                    {auditLog.map(a => (
+                      <tr key={a.id} className="hover:bg-slate-50">
+                        <td className="py-2.5 px-4 text-slate-500 whitespace-nowrap">{fmtDate(a.createdAt)}</td>
+                        <td className="px-2 text-slate-700 truncate max-w-[160px]">{a.actorEmail}</td>
+                        <td className="px-2">
+                          <span className="chip bg-slate-100 text-slate-700">{a.action.replace(/_/g, ' ')}</span>
+                        </td>
+                        <td className="px-2 text-slate-500 truncate max-w-[160px]">{a.targetEmail || '\u2014'}</td>
+                        <td className="px-4 text-slate-500 truncate max-w-xs">{a.details}</td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
               )}
             </div>
           )}

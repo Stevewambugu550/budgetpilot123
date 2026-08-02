@@ -15,8 +15,23 @@ CREATE TABLE IF NOT EXISTS app_users (
   password_hash text NOT NULL,
   role          text NOT NULL DEFAULT 'user'
                   CHECK (role IN ('user','it','admin','superadmin')),
+  active        boolean NOT NULL DEFAULT true,
   created_at    timestamptz DEFAULT now()
 );
+
+-- ─── AUDIT LOG ───────────────────────────────────────────────
+-- Records every admin action for accountability.
+CREATE TABLE IF NOT EXISTS admin_audit_log (
+  id           uuid PRIMARY KEY DEFAULT gen_random_uuid(),
+  actor_id     text NOT NULL,
+  actor_email  text NOT NULL,
+  action       text NOT NULL,
+  target_id    text,
+  target_email text,
+  details      text DEFAULT '',
+  created_at   timestamptz DEFAULT now()
+);
+CREATE INDEX IF NOT EXISTS audit_log_created_idx ON admin_audit_log(created_at DESC);
 
 -- ─── AUTH: SESSIONS ──────────────────────────────────────────
 -- Token-based sessions (30-day expiry). Cleaned up on signin.

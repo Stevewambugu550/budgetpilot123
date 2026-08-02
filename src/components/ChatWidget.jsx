@@ -1,13 +1,41 @@
 import { useEffect, useRef, useState } from 'react'
-import { MessageCircle, X, Send, Bot, Loader2 } from 'lucide-react'
+import {
+  MessageCircle, X, Send, Bot, Loader2,
+  Settings2, ExternalLink, Copy, Check, Sparkles, Key,
+  MessageSquare
+} from 'lucide-react'
 import { buildFinancialContext, sendChatMessage } from '../lib/chat'
 
 const WELCOME = {
   role: 'assistant',
-  content: "Hi! I'm BudgetPilot AI. Ask me about your spending, budgets, savings goals, or how to improve your finances.",
+  content: "Hi! I'm BudgetPilot AI. Ask me about your spending, budgets, savings goals, or how to improve your finances. I can chat in-app, or I can link you to a free online AI bot if you prefer.",
 }
 
 const STORAGE_KEY = 'bp_chat_open'
+
+const FREE_BOTS = [
+  { name: 'ChatGPT', url: 'https://chat.openai.com', icon: '💬' },
+  { name: 'Google Gemini', url: 'https://gemini.google.com', icon: '✨' },
+  { name: 'Microsoft Copilot', url: 'https://copilot.microsoft.com', icon: '🛡️' },
+  { name: 'Claude', url: 'https://claude.ai/new', icon: '🧠' },
+  { name: 'Groq Chat', url: 'https://chat.groq.com', icon: '⚡' },
+  { name: 'Hugging Chat', url: 'https://huggingface.co/chat', icon: '🤗' },
+]
+
+const FREE_TIER_APIS = [
+  { name: 'Groq', env: 'GROQ_API_KEY', link: 'https://console.groq.com/keys' },
+  { name: 'Gemini', env: 'GEMINI_API_KEY', link: 'https://aistudio.google.com/app/apikey' },
+  { name: 'OpenRouter', env: 'OPENROUTER_API_KEY', link: 'https://openrouter.ai/keys' },
+]
+
+const makePrompt = (data, question) => {
+  const context = buildFinancialContext(data)
+  return `Act as my BudgetPilot personal-finance assistant. Use the following summary of my finances to answer my question. Do not invent numbers that are not in the summary.
+
+${context}
+
+My question: ${question || 'How am I doing financially and what should I focus on?'}`
+}
 
 export default function ChatWidget({ data }) {
   const [open, setOpen] = useState(() => localStorage.getItem(STORAGE_KEY) === 'true')
@@ -15,12 +43,14 @@ export default function ChatWidget({ data }) {
   const [messages, setMessages] = useState([WELCOME])
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState('')
+  const [mode, setMode] = useState('chat') // 'chat' | 'options'
+  const [copied, setCopied] = useState(false)
   const endRef = useRef(null)
   const inputRef = useRef(null)
 
   useEffect(() => { localStorage.setItem(STORAGE_KEY, String(open)) }, [open])
   useEffect(() => { endRef.current?.scrollIntoView({ behavior: 'smooth' }) }, [messages, open])
-  useEffect(() => { if (open) inputRef.current?.focus() }, [open])
+  useEffect(() => { if (open && mode === 'chat') inputRef.current?.focus() }, [open, mode])
 
   const handleSend = async (e) => {
     e.preventDefault()
@@ -37,10 +67,23 @@ export default function ChatWidget({ data }) {
       const reply = await sendChatMessage(next, context)
       setMessages([...next, { role: 'assistant', content: reply }])
     } catch (err) {
-      setError(err.message || 'Something went wrong. Please try again.')
+      const msg = err.message || 'Something went wrong. Please try again.'
+      setError(msg)
+      if (msg.toLowerCase().includes('not configured') || msg.toLowerCase().includes('not set')) {
+        setMode('options')
+      }
     } finally {
       setLoading(false)
     }
+  }
+
+  const prompt = makePrompt(data, input)
+  const copyPrompt = async () => {
+    try {
+      await navigator.clipboard.writeText(prompt)
+      setCopied(true)
+      setTimeout(() => setCopied(false), 1500)
+    } catch {}
   }
 
   return (
@@ -62,58 +105,143 @@ export default function ChatWidget({ data }) {
               <Bot className="w-5 h-5" />
               <span className="font-semibold text-sm">BudgetPilot AI</span>
             </div>
-            <button onClick={() => setOpen(false)} className="text-white/80 hover:text-white" aria-label="Close">
-              <X className="w-5 h-5" />
-            </button>
+            <div className="flex items-center gap-1">
+              <button
+                onClick={() => setMode(m => m === 'options' ? 'chat' : 'options')}
+                className="p-1.5 rounded-md hover:bg-white/10"
+                aria-label="AI chat options"
+                title="AI chat options"
+              >
+                <Settings2 className="w-5 h-5" />
+              </button>
+              <button onClick={() => setOpen(false)} className="p-1.5 rounded-md hover:bg-white/10" aria-label="Close">
+                <X className="w-5 h-5" />
+              </button>
+            </div>
           </div>
 
-          <div className="flex-1 overflow-y-auto p-4 space-y-3 bg-slate-50" style={{ minHeight: '18rem' }}>
-            {messages.map((m, i) => (
-              <div key={i} className={`flex ${m.role === 'user' ? 'justify-end' : 'justify-start'}`}>
-                <div
-                  className={`max-w-[85%] rounded-xl px-3 py-2 text-sm ${
-                    m.role === 'user'
-                      ? 'bg-brand-600 text-white rounded-br-none'
-                      : 'bg-white text-slate-800 border border-slate-200 rounded-bl-none shadow-sm'
-                  }`}
+          {mode === 'options' ? (
+            <div className="flex-1 overflow-y-auto p-4 space-y-5 bg-slate-50" style={{ minHeight: '18rem' }}>
+              <section>
+                <h4 className="text-sm font-semibold text-slate-800 flex items-center gap-2 mb-2">
+                  <Sparkles className="w-4 h-4 text-brand-600" /> Built-in chat
+                </h4>
+                <p className="text-xs text-slate-600 mb-3">
+                  Add a free API key to the Netlify environment for one of these providers. The app will try them in order.
+                </p>
+                <div className="space-y-2">
+                  {FREE_TIER_APIS.map(a => (
+                    <a
+                      key={a.name}
+                      href={a.link}
+                      target="_blank"
+                      rel="noreferrer"
+                      className="flex items-center justify-between p-2.5 bg-white border border-slate-200 rounded-lg text-sm hover:border-brand-400 hover:shadow-sm transition"
+                    >
+                      <span className="flex items-center gap-2"><Key className="w-4 h-4 text-slate-400" /> {a.name}</span>
+                      <span className="text-xs text-slate-400 font-mono">{a.env}</span>
+                    </a>
+                  ))}
+                </div>
+              </section>
+
+              <section>
+                <h4 className="text-sm font-semibold text-slate-800 flex items-center gap-2 mb-2">
+                  <MessageSquare className="w-4 h-4 text-brand-600" /> Free online AI bots
+                </h4>
+                <p className="text-xs text-slate-600 mb-3">
+                  No API key needed. Copy the prompt below, open your favourite free chatbot, and paste it.
+                </p>
+                <div className="space-y-2 mb-3">
+                  {FREE_BOTS.map(b => (
+                    <a
+                      key={b.name}
+                      href={b.url}
+                      target="_blank"
+                      rel="noreferrer"
+                      className="flex items-center justify-between p-2.5 bg-white border border-slate-200 rounded-lg text-sm hover:border-brand-400 hover:shadow-sm transition"
+                    >
+                      <span className="flex items-center gap-2"><span>{b.icon}</span> {b.name}</span>
+                      <ExternalLink className="w-4 h-4 text-slate-400" />
+                    </a>
+                  ))}
+                </div>
+
+                <div className="bg-white border border-slate-200 rounded-lg p-3">
+                  <div className="flex items-center justify-between mb-2">
+                    <span className="text-xs font-medium text-slate-500">Pre-filled prompt</span>
+                    <button
+                      onClick={copyPrompt}
+                      className="text-xs flex items-center gap-1 text-brand-600 hover:text-brand-700"
+                    >
+                      {copied ? <Check className="w-3.5 h-3.5" /> : <Copy className="w-3.5 h-3.5" />}
+                      {copied ? 'Copied' : 'Copy'}
+                    </button>
+                  </div>
+                  <p className="text-xs text-slate-600 max-h-28 overflow-y-auto whitespace-pre-wrap">
+                    {prompt}
+                  </p>
+                </div>
+              </section>
+
+              <button
+                onClick={() => setMode('chat')}
+                className="w-full btn-primary text-sm py-2"
+              >
+                Back to chat
+              </button>
+            </div>
+          ) : (
+            <>
+              <div className="flex-1 overflow-y-auto p-4 space-y-3 bg-slate-50" style={{ minHeight: '18rem' }}>
+                {messages.map((m, i) => (
+                  <div key={i} className={`flex ${m.role === 'user' ? 'justify-end' : 'justify-start'}`}>
+                    <div
+                      className={`max-w-[85%] rounded-xl px-3 py-2 text-sm ${
+                        m.role === 'user'
+                          ? 'bg-brand-600 text-white rounded-br-none'
+                          : 'bg-white text-slate-800 border border-slate-200 rounded-bl-none shadow-sm'
+                      }`}
+                    >
+                      {m.content}
+                    </div>
+                  </div>
+                ))}
+                {loading && (
+                  <div className="flex justify-start">
+                    <div className="bg-white border border-slate-200 rounded-xl rounded-bl-none px-3 py-2 text-sm text-slate-500 flex items-center gap-2">
+                      <Loader2 className="w-4 h-4 animate-spin" /> Thinking…
+                    </div>
+                  </div>
+                )}
+                {error && (
+                  <div className="text-xs text-rose-600 bg-rose-50 border border-rose-100 rounded-lg p-2">
+                    {error}
+                  </div>
+                )}
+                <div ref={endRef} />
+              </div>
+
+              <form onSubmit={handleSend} className="p-3 bg-white border-t border-slate-200 flex gap-2">
+                <input
+                  ref={inputRef}
+                  value={input}
+                  onChange={(e) => setInput(e.target.value)}
+                  onKeyDown={(e) => { if (e.key === 'Enter' && !e.shiftKey) handleSend(e) }}
+                  placeholder="Ask about your budget…"
+                  className="flex-1 min-w-0 rounded-lg border border-slate-300 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-brand-500"
+                />
+                <button
+                  type="submit"
+                  disabled={!input.trim() || loading}
+                  className="btn-primary p-2 disabled:opacity-50 disabled:cursor-not-allowed"
+                  aria-label="Send message"
                 >
-                  {m.content}
-                </div>
-              </div>
-            ))}
-            {loading && (
-              <div className="flex justify-start">
-                <div className="bg-white border border-slate-200 rounded-xl rounded-bl-none px-3 py-2 text-sm text-slate-500 flex items-center gap-2">
-                  <Loader2 className="w-4 h-4 animate-spin" /> Thinking…
-                </div>
-              </div>
-            )}
-            {error && (
-              <div className="text-xs text-rose-600 bg-rose-50 border border-rose-100 rounded-lg p-2">
-                {error}
-              </div>
-            )}
-            <div ref={endRef} />
-          </div>
-
-          <form onSubmit={handleSend} className="p-3 bg-white border-t border-slate-200 flex gap-2">
-            <input
-              ref={inputRef}
-              value={input}
-              onChange={(e) => setInput(e.target.value)}
-              onKeyDown={(e) => { if (e.key === 'Enter' && !e.shiftKey) handleSend(e) }}
-              placeholder="Ask about your budget…"
-              className="flex-1 min-w-0 rounded-lg border border-slate-300 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-brand-500"
-            />
-            <button
-              type="submit"
-              disabled={!input.trim() || loading}
-              className="btn-primary p-2 disabled:opacity-50 disabled:cursor-not-allowed"
-              aria-label="Send message"
-            >
-              <Send className="w-4 h-4" />
-            </button>
-          </form>
+                  <Send className="w-4 h-4" />
+                </button>
+              </form>
+            </>
+          )}
         </div>
       )}
     </div>

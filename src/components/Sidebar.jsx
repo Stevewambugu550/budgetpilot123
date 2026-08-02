@@ -39,7 +39,7 @@ const Sidebar = ({ page, setPage }) => {
         </div>
       </div>
 
-      <nav className="flex-1 px-3 space-y-1 overflow-y-auto">
+      <nav className="flex-1 px-3 space-y-1.5 overflow-y-auto">
         {nav.map(n => {
           const Icon = n.icon
           const active = page === n.id
@@ -47,19 +47,19 @@ const Sidebar = ({ page, setPage }) => {
             <button
               key={n.id}
               onClick={() => { setPage(n.id); setMobileOpen(false) }}
-              className={`w-full flex items-center gap-3 px-3 py-2.5 rounded-xl text-sm font-semibold transition-all ${
+              className={`w-full flex items-center gap-3 px-3 py-3 rounded-2xl text-sm font-semibold transition-all ${
                 active
-                  ? 'bg-brand-600 text-white shadow-md shadow-brand-600/25'
-                  : 'text-slate-600 hover:bg-slate-100'
+                  ? 'bg-gradient-to-r from-brand-600 to-brand-500 text-white shadow-lg shadow-brand-600/25'
+                  : 'text-slate-600 hover:bg-slate-100/70'
               }`}
             >
-              <Icon className="w-4 h-4 flex-shrink-0" />
+              <Icon className={`w-5 h-5 flex-shrink-0 ${active ? 'text-white' : 'text-slate-500'}`} />
               {n.label}
             </button>
           )
         })}
 
-        <div className="pt-2 mt-2 border-t border-slate-100 space-y-1">
+        <div className="pt-3 mt-3 border-t border-slate-100/80 space-y-1.5">
           {FOOTER_NAV.map(n => {
             const Icon = n.icon
             const active = page === n.id
@@ -67,13 +67,13 @@ const Sidebar = ({ page, setPage }) => {
               <button
                 key={n.id}
                 onClick={() => { setPage(n.id); setMobileOpen(false) }}
-                className={`w-full flex items-center gap-3 px-3 py-2.5 rounded-xl text-sm font-semibold transition-all ${
+                className={`w-full flex items-center gap-3 px-3 py-3 rounded-2xl text-sm font-semibold transition-all ${
                   active
-                    ? 'bg-brand-600 text-white shadow-md shadow-brand-600/25'
-                    : 'text-slate-500 hover:bg-slate-100'
+                    ? 'bg-gradient-to-r from-brand-600 to-brand-500 text-white shadow-lg shadow-brand-600/25'
+                    : 'text-slate-500 hover:bg-slate-100/70'
                 }`}
               >
-                <Icon className="w-4 h-4 flex-shrink-0" />
+                <Icon className={`w-5 h-5 flex-shrink-0 ${active ? 'text-white' : 'text-slate-500'}`} />
                 {n.label}
               </button>
             )

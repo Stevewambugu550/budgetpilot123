@@ -1,4 +1,5 @@
 import * as XLSX from 'xlsx'
+import { INCOME_CATEGORIES, EXPENSE_CATEGORIES } from './categories'
 
 const todayStamp = () => new Date().toISOString().slice(0, 10)
 
@@ -108,4 +109,56 @@ export const exportTransactionsCSV = (transactions, accounts, filename) => {
   a.download = filename || `transactions-${todayStamp()}.csv`
   a.click()
   URL.revokeObjectURL(url)
+}
+
+// ─── Import transactions from CSV / Excel ───────────────────────────────
+const normalize = s => String(s ?? '').toString().trim()
+const cleanType = s => {
+  const t = normalize(s).toLowerCase()
+  if (t.startsWith('inc')) return 'income'
+  if (t.startsWith('exp') || t === 'out' || t === 'outgo') return 'expense'
+  return 'expense'
+}
+const findAccount = (accounts, name) => accounts.find(a => a.name.toLowerCase() === normalize(name).toLowerCase())
+const validCategory = (type, cat) => {
+  const list = type === 'income' ? INCOME_CATEGORIES : EXPENSE_CATEGORIES
+  const c = list.find(x => x.id.toLowerCase() === normalize(cat).toLowerCase())
+  return c ? c.id : (type === 'income' ? 'Other' : 'Other')
+}
+
+export const parseTransactionsImport = (buffer, accounts) => {
+  const wb = XLSX.read(buffer, { type: 'array' })
+  const ws = wb.Sheets[wb.SheetNames[0]]
+  const raw = XLSX.utils.sheet_to_json(ws, { defval: '', raw: false })
+  if (!raw.length) throw new Error('The file is empty or has no rows')
+
+  const keys = Object.keys(raw[0]).map(k => k.toLowerCase().trim().replace(/[^a-z0-9]/g, ''))
+  const get = (row, ...names) => {
+    const n = names.map(k => k.toLowerCase().replace(/[^a-z0-9]/g, ''))
+    for (const [k, v] of Object.entries(row)) {
+      const clean = k.toLowerCase().trim().replace(/[^a-z0-9]/g, '')
+      if (n.includes(clean)) return v
+    }
+    return ''
+  }
+
+  const out = []
+  for (const row of raw) {
+    let date = normalize(get(row, 'Date', 'date', 'transaction date', 'day'))
+    if (!date) date = todayStamp()
+    if (!/\d{4}-\d{2}-\d{2}/.test(date)) {
+      const d = new Date(date)
+      date = isNaN(d) ? todayStamp() : d.toISOString().slice(0, 10)
+    }
+
+    const type = cleanType(get(row, 'Type', 'type', 'transaction type', 'in/out'))
+    const account = findAccount(accounts, get(row, 'Account', 'account', 'account name'))
+    const accountId = account ? account.id : null
+    const category = validCategory(type, get(row, 'Category', 'category'))
+    const amount = Math.abs(Number(get(row, 'Amount', 'amount', 'value')) || 0)
+    const note = normalize(get(row, 'Note', 'note', 'description', 'details'))
+
+    out.push({ type, amount, category, accountId, date, note })
+  }
+  return out
 }

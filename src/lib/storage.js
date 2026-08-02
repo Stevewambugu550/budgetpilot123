@@ -103,6 +103,11 @@ export const addTransaction = async (t) => {
   await callApi('addTransaction', t)
   await reload()
 }
+export const importTransactions = async (rows) => {
+  if (!currentUserId) return
+  await callApi('importTransactions', rows)
+  await reload()
+}
 export const updateTransaction = async (id, patch) => {
   const oldTx = cache.transactions.find(t => t.id === id)
   await callApi('updateTransaction', { id, old: oldTx, ...patch })

@@ -134,6 +134,7 @@ async function dispatch(sql, session, action, payload) {
     case 'addTransaction':    return addTransaction(sql, userId, payload)
     case 'updateTransaction': return updateTransaction(sql, userId, payload)
     case 'deleteTransaction': return deleteTransaction(sql, payload)
+    case 'importTransactions': return importTransactions(sql, userId, payload)
 
     case 'addGoal':    return addGoal(sql, userId, payload)
     case 'updateGoal': return updateGoal(sql, payload)
@@ -252,6 +253,22 @@ async function addTransaction(sql, userId, t) {
     await sql`UPDATE accounts SET balance = balance + ${delta} WHERE id = ${t.accountId}::uuid`
   }
   return mapTx(rows[0])
+}
+async function importTransactions(sql, userId, rows) {
+  const out = []
+  for (const t of rows) {
+    const amt = Number(t.amount) || 0
+    const r = await sql`
+      INSERT INTO transactions (user_id, type, amount, category, account_id, person_id, date, note)
+      VALUES (${userId}, ${t.type}, ${amt}, ${t.category || ''}, ${t.accountId ?? null}::uuid, ${t.personId ?? null}::uuid, ${t.date}, ${t.note || ''})
+      RETURNING *`
+    if (t.accountId) {
+      const delta = t.type === 'income' ? amt : -amt
+      await sql`UPDATE accounts SET balance = balance + ${delta} WHERE id = ${t.accountId}::uuid`
+    }
+    out.push(mapTx(r[0]))
+  }
+  return out
 }
 async function updateTransaction(sql, userId, { id, old: oldTx, ...t }) {
   const amt = Number(t.amount) || 0

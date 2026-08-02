@@ -1,8 +1,9 @@
-import { useMemo, useState } from 'react'
-import { Search, Edit2, Trash2, ArrowUpCircle, ArrowDownCircle, FileSpreadsheet, FileDown } from 'lucide-react'
+import { useMemo, useRef, useState } from 'react'
+import { Search, Edit2, Trash2, ArrowUpCircle, ArrowDownCircle, FileSpreadsheet, FileDown, Upload } from 'lucide-react'
 import Modal from '../components/Modal'
 import AccountSelect from '../components/AccountSelect'
-import { addTransaction, updateTransaction, deleteTransaction } from '../lib/storage'
+import { addTransaction, updateTransaction, deleteTransaction, importTransactions } from '../lib/storage'
+import { parseTransactionsImport } from '../lib/excel'
 import { fmtMoney, fmtDate } from '../lib/format'
 import { INCOME_CATEGORIES, EXPENSE_CATEGORIES, catMeta } from '../lib/categories'
 import { exportToExcel, exportTransactionsCSV } from '../lib/excel'
@@ -20,6 +21,8 @@ const Transactions = ({ data, setPage }) => {
   const [form, setForm] = useState(empty())
   const [search, setSearch] = useState('')
   const [ft, setFt] = useState('all')
+  const [importing, setImporting] = useState(false)
+  const fileRef = useRef(null)
 
   const openNew = (type = 'expense') => {
     setForm({ ...empty(), type, category: type === 'income' ? 'Salary' : 'Food', accountId: accounts[0]?.id })
@@ -39,6 +42,23 @@ const Transactions = ({ data, setPage }) => {
   const remove = (id) => {
     if (!confirm('Delete this transaction? It will also reverse the account balance.')) return
     deleteTransaction(id); close()
+  }
+  const onFilePick = () => fileRef.current?.click()
+  const onFileChange = async (e) => {
+    const file = e.target.files?.[0]
+    if (!file) return
+    setImporting(true)
+    try {
+      const buffer = await file.arrayBuffer()
+      const rows = parseTransactionsImport(buffer, accounts)
+      await importTransactions(rows)
+      toast.success(`Imported ${rows.length} transactions`)
+    } catch (err) {
+      toast.error(err.message || 'Import failed')
+    } finally {
+      setImporting(false)
+      e.target.value = ''
+    }
   }
 
   const filtered = useMemo(() => {
@@ -73,6 +93,16 @@ const Transactions = ({ data, setPage }) => {
           <button onClick={() => exportToExcel(data)} className="btn-ghost" disabled={!transactions.length} title="Export entire workspace to Excel">
             <FileSpreadsheet className="w-4 h-4" /> Excel
           </button>
+          <button onClick={onFilePick} className="btn-ghost" disabled={importing} title="Import CSV or Excel">
+            <Upload className="w-4 h-4" /> {importing ? 'Importing…' : 'Import'}
+          </button>
+          <input
+            ref={fileRef}
+            type="file"
+            accept=".csv,.xlsx,.xls"
+            onChange={onFileChange}
+            className="hidden"
+          />
           <button onClick={() => openNew('income')}  className="btn bg-emerald-600 hover:bg-emerald-700 text-white"><ArrowUpCircle className="w-4 h-4" /> Income</button>
           <button onClick={() => openNew('expense')} className="btn bg-rose-600 hover:bg-rose-700 text-white"><ArrowDownCircle className="w-4 h-4" /> Expense</button>
         </div>

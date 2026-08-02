@@ -4,6 +4,7 @@ import { AuthProvider, useAuth } from './context/AuthContext'
 import { ToastProvider } from './context/ToastContext'
 import AuthPage from './pages/AuthPage'
 import Sidebar from './components/Sidebar'
+import ChatWidget from './components/ChatWidget'
 import Dashboard from './pages/Dashboard'
 import Transactions from './pages/Transactions'
 import Budgets from './pages/Budgets'
@@ -105,6 +106,7 @@ const Shell = () => {
           <PageComp data={data} setPage={setPage} />
         </div>
       </main>
+      <ChatWidget data={data} />
     </div>
   )
 }

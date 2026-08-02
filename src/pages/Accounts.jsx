@@ -1,25 +1,42 @@
 import { useState } from 'react'
-import { Plus, Edit2, Trash2, Wallet, ArrowLeftRight, CreditCard, MoreHorizontal } from 'lucide-react'
+import {
+  Plus, Edit2, Trash2, Wallet, ArrowLeftRight, CreditCard, MoreHorizontal,
+  ArrowUpCircle, ArrowDownCircle, X
+} from 'lucide-react'
 import Modal from '../components/Modal'
 import AccountSelect from '../components/AccountSelect'
-import { addAccount, updateAccount, deleteAccount, transfer } from '../lib/storage'
+import { addAccount, updateAccount, deleteAccount, transfer, addTransaction } from '../lib/storage'
 import { fmtMoney } from '../lib/format'
-import { ACCOUNT_TYPES } from '../lib/categories'
+import { ACCOUNT_TYPES, INCOME_CATEGORIES, EXPENSE_CATEGORIES } from '../lib/categories'
 import { useToast } from '../context/ToastContext'
 
 const COLORS = ['#10b981', '#3b82f6', '#f59e0b', '#ef4444', '#8b5cf6', '#06b6d4', '#ec4899', '#64748b']
 const empty = () => ({ name: '', type: 'bank', balance: '', color: COLORS[0] })
 
 const emptyTransfer = (accs) => ({ fromId: accs[0]?.id || '', toId: accs[1]?.id || '', amount: '', note: '' })
+const emptyTx = (account) => ({
+  type: 'expense', amount: '', category: 'Food', accountId: account?.id || '',
+  date: new Date().toISOString().slice(0, 10), note: '',
+})
 
 const typeMeta = (id) => ACCOUNT_TYPES.find(t => t.id === id) || ACCOUNT_TYPES[ACCOUNT_TYPES.length - 1]
-
 const maskId = (id) => id ? `**** ${id.slice(-4).toUpperCase()}` : '****'
 
-const AccountCard = ({ account, currency, onEdit, onDelete, onTransfer }) => {
+const AccountCard = ({ account, currency, onEdit, onDelete, onTransfer, onQuick }) => {
   const t = typeMeta(account.type)
+  const [menu, setMenu] = useState(false)
+  const toggle = (e) => { e.stopPropagation(); setMenu(o => !o) }
+
+  const actions = [
+    { icon: ArrowUpCircle, label: 'Income', tone: 'text-emerald-700', onClick: () => onQuick(account, 'income') },
+    { icon: ArrowDownCircle, label: 'Expense', tone: 'text-rose-700', onClick: () => onQuick(account, 'expense') },
+    { icon: ArrowLeftRight, label: 'Transfer', tone: 'text-slate-700', onClick: () => onTransfer(account) },
+    { icon: Edit2, label: 'Edit', tone: 'text-slate-700', onClick: () => onEdit(account) },
+    { icon: Trash2, label: 'Delete', tone: 'text-rose-600', onClick: () => onDelete(account.id) },
+  ]
+
   return (
-    <div className="group relative h-52 rounded-3xl p-5 text-white shadow-lg overflow-hidden transition-transform hover:-translate-y-1">
+    <div className="relative h-52 rounded-3xl p-5 text-white shadow-lg overflow-hidden transition-transform hover:-translate-y-1">
       <div className="absolute inset-0" style={{ background: account.color || COLORS[0] }} />
       <div className="absolute inset-0 bg-gradient-to-br from-slate-900/40 via-slate-900/20 to-transparent" />
       <div className="absolute -bottom-10 -right-10 w-40 h-40 rounded-full bg-white/10" />
@@ -37,14 +54,18 @@ const AccountCard = ({ account, currency, onEdit, onDelete, onTransfer }) => {
             </div>
           </div>
           <div className="relative">
-            <button className="p-1.5 rounded-lg hover:bg-white/20 opacity-80 group-hover:opacity-100 transition">
-              <MoreHorizontal className="w-4 h-4" />
+            <button onClick={toggle} className="p-1.5 rounded-lg hover:bg-white/20 opacity-80 transition bg-white/10">
+              {menu ? <X className="w-4 h-4" /> : <MoreHorizontal className="w-4 h-4" />}
             </button>
-            <div className="absolute right-0 top-8 hidden group-hover:flex flex-col gap-1 bg-white/95 backdrop-blur rounded-xl p-1 shadow-xl min-w-[8rem] z-10">
-              <button onClick={() => onEdit(account)} className="text-left text-xs font-semibold text-slate-700 px-3 py-2 rounded-lg hover:bg-slate-100 flex items-center gap-2"><Edit2 className="w-3.5 h-3.5" /> Edit</button>
-              <button onClick={() => onTransfer(account)} className="text-left text-xs font-semibold text-slate-700 px-3 py-2 rounded-lg hover:bg-slate-100 flex items-center gap-2"><ArrowLeftRight className="w-3.5 h-3.5" /> Transfer</button>
-              <button onClick={() => onDelete(account.id)} className="text-left text-xs font-semibold text-rose-600 px-3 py-2 rounded-lg hover:bg-rose-50 flex items-center gap-2"><Trash2 className="w-3.5 h-3.5" /> Delete</button>
-            </div>
+            {menu && (
+              <div className="absolute right-0 top-9 flex flex-col gap-0.5 bg-white/95 backdrop-blur rounded-xl p-1.5 shadow-2xl min-w-[9.5rem] z-20">
+                {actions.map((a, i) => (
+                  <button key={i} onClick={() => { a.onClick(); setMenu(false) }} className={`text-left text-xs font-semibold ${a.tone} px-3 py-2 rounded-lg hover:bg-slate-100 flex items-center gap-2`}>
+                    <a.icon className="w-3.5 h-3.5" /> {a.label}
+                  </button>
+                ))}
+              </div>
+            )}
           </div>
         </div>
 
@@ -68,6 +89,8 @@ const Accounts = ({ data }) => {
   const [form, setForm] = useState(empty())
   const [trModal, setTrModal] = useState(false)
   const [tr, setTr] = useState(emptyTransfer(accounts))
+  const [quick, setQuick] = useState(null)
+  const [tx, setTx] = useState(emptyTx())
 
   const open = (a = null) => {
     setForm(a ? { ...a, balance: String(a.balance) } : empty())
@@ -87,6 +110,13 @@ const Accounts = ({ data }) => {
   const cur = settings.currency
 
   const startTransfer = (a) => { setTr({ ...emptyTransfer(accounts), fromId: a.id }); setTrModal(true) }
+  const startQuick = (a, type) => { setTx({ ...emptyTx(a), type, category: type === 'income' ? 'Salary' : 'Food' }); setQuick(a) }
+  const closeQuick = () => { setQuick(null); setTx(emptyTx()) }
+  const doQuick = () => {
+    const p = { ...tx, amount: Number(tx.amount) }
+    if (!p.amount || p.amount <= 0) return toast.error('Enter a valid amount')
+    addTransaction(p); toast.success(`${quick.name}: ${p.type} added`); closeQuick()
+  }
 
   const doTransfer = () => {
     if (tr.fromId === tr.toId) return toast.error('Pick two different accounts')
@@ -95,6 +125,8 @@ const Accounts = ({ data }) => {
     toast.success('Transfer complete')
     setTrModal(false)
   }
+
+  const cats = tx.type === 'income' ? INCOME_CATEGORIES : EXPENSE_CATEGORIES
 
   return (
     <div className="space-y-6">
@@ -125,7 +157,7 @@ const Accounts = ({ data }) => {
       ) : (
         <div className="grid sm:grid-cols-2 lg:grid-cols-3 gap-5">
           {accounts.map(a => (
-            <AccountCard key={a.id} account={a} currency={cur} onEdit={open} onDelete={remove} onTransfer={startTransfer} />
+            <AccountCard key={a.id} account={a} currency={cur} onEdit={open} onDelete={remove} onTransfer={startTransfer} onQuick={startQuick} />
           ))}
           <button onClick={() => open()} className="h-52 rounded-3xl border-2 border-dashed border-slate-300 flex flex-col items-center justify-center gap-3 text-slate-500 hover:border-brand-400 hover:text-brand-600 hover:bg-brand-50/50 transition">
             <div className="w-14 h-14 rounded-2xl bg-slate-100 flex items-center justify-center"><Plus className="w-7 h-7" /></div>
@@ -208,6 +240,55 @@ const Accounts = ({ data }) => {
           <div>
             <label className="label">Note (optional)</label>
             <input className="input" value={tr.note} onChange={e => setTr(s => ({ ...s, note: e.target.value }))} placeholder="e.g. Savings top-up" />
+          </div>
+        </div>
+      </Modal>
+
+      {/* Quick transaction modal */}
+      <Modal open={!!quick} onClose={closeQuick}
+        title={`Quick ${tx.type} · ${quick?.name}`}
+        size="sm"
+        footer={
+          <>
+            <button onClick={closeQuick} className="btn-ghost">Cancel</button>
+            <button onClick={doQuick} className="btn-primary">Save</button>
+          </>
+        }
+      >
+        <div className="space-y-4">
+          <div className="flex gap-1 bg-slate-100 rounded-2xl p-1">
+            {['income', 'expense'].map(t => (
+              <button key={t} onClick={() => setTx(f => ({ ...f, type: t, category: t === 'income' ? 'Salary' : 'Food' }))}
+                className={`flex-1 py-2 rounded-xl text-sm font-bold capitalize flex items-center justify-center gap-2 ${tx.type === t ? 'bg-white shadow-sm text-slate-900' : 'text-slate-500'}`}>
+                {t === 'income' ? <ArrowUpCircle className="w-4 h-4 text-emerald-600" /> : <ArrowDownCircle className="w-4 h-4 text-rose-600" />} {t}
+              </button>
+            ))}
+          </div>
+          <div className="grid grid-cols-2 gap-3">
+            <div>
+              <label className="label">Amount</label>
+              <input type="number" min="0" step="0.01" className="input" value={tx.amount} onChange={e => setTx(f => ({ ...f, amount: e.target.value }))} placeholder="0.00" autoFocus />
+            </div>
+            <div>
+              <label className="label">Date</label>
+              <input type="date" className="input" value={tx.date} onChange={e => setTx(f => ({ ...f, date: e.target.value }))} />
+            </div>
+          </div>
+          <div>
+            <label className="label">Category</label>
+            <div className="grid grid-cols-4 gap-2 max-h-44 overflow-y-auto">
+              {cats.map(c => (
+                <button key={c.id} type="button" onClick={() => setTx(f => ({ ...f, category: c.id }))}
+                  className={`flex flex-col items-center gap-1 py-2 px-1 rounded-xl text-xs font-semibold border-2 ${tx.category === c.id ? 'border-brand-500 bg-brand-50' : 'border-transparent bg-slate-50 hover:bg-slate-100'}`}>
+                  <span className="text-lg">{c.icon}</span>
+                  <span className="truncate w-full text-center">{c.id}</span>
+                </button>
+              ))}
+            </div>
+          </div>
+          <div>
+            <label className="label">Note (optional)</label>
+            <input className="input" value={tx.note} onChange={e => setTx(f => ({ ...f, note: e.target.value }))} placeholder="e.g. Lunch with team" />
           </div>
         </div>
       </Modal>

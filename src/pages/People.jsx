@@ -3,11 +3,13 @@ import { Plus, Edit2, Trash2, DollarSign, Phone, Users, Calendar } from 'lucide-
 import Modal from '../components/Modal'
 import { addPerson, updatePerson, deletePerson, payPerson } from '../lib/storage'
 import { fmtMoney, fmtDate } from '../lib/format'
+import { useToast } from '../context/ToastContext'
 
 const empty = () => ({ name: '', role: '', monthlyPay: '', hireDate: new Date().toISOString().slice(0,10), phone: '', note: '', active: true })
 
 const People = ({ data }) => {
   const { people, payments, accounts, settings } = data
+  const toast = useToast()
   const [modal, setModal] = useState(null)
   const [form, setForm] = useState(empty())
   const [pay, setPay] = useState({ open: false, person: null, amount: '', accountId: '', note: '' })
@@ -18,20 +20,21 @@ const People = ({ data }) => {
   }
   const close = () => { setModal(null); setForm(empty()) }
   const save = () => {
-    if (!form.name.trim()) return alert('Name required')
+    if (!form.name.trim()) return toast.error('Name is required')
     const payload = { ...form, monthlyPay: Number(form.monthlyPay) || 0 }
-    if (modal.mode === 'new') addPerson(payload)
-    else updatePerson(modal.p.id, payload)
+    if (modal.mode === 'new') { addPerson(payload); toast.success('Person added') }
+    else { updatePerson(modal.p.id, payload); toast.success('Person updated') }
     close()
   }
-  const remove = (id) => { if (confirm('Remove this person? Payment history is also deleted.')) { deletePerson(id); close() } }
+  const remove = (id) => { if (confirm('Remove this person? Payment history is also deleted.')) { deletePerson(id); toast.info('Person removed'); close() } }
 
   const openPay = (person) => setPay({ open: true, person, amount: String(person.monthlyPay || ''), accountId: accounts[0]?.id, note: '' })
   const doPay = () => {
     const amt = Number(pay.amount) || 0
-    if (amt <= 0) return alert('Enter amount')
-    if (!pay.accountId) return alert('Pick account')
+    if (amt <= 0) return toast.error('Enter an amount greater than zero')
+    if (!pay.accountId) return toast.error('Pick an account to pay from')
     payPerson(pay.person.id, amt, pay.accountId, pay.note)
+    toast.success(`Payment of ${fmtMoney(amt, settings.currency)} recorded`)
     setPay({ open: false, person: null, amount: '', accountId: '', note: '' })
   }
 

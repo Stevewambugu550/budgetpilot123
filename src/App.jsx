@@ -1,14 +1,17 @@
 import { useEffect, useState } from 'react'
 import { Loader2, Shield, LogOut } from 'lucide-react'
 import { AuthProvider, useAuth } from './context/AuthContext'
+import { ToastProvider } from './context/ToastContext'
 import AuthPage from './pages/AuthPage'
 import Sidebar from './components/Sidebar'
 import Dashboard from './pages/Dashboard'
 import Transactions from './pages/Transactions'
+import Budgets from './pages/Budgets'
 import Goals from './pages/Goals'
 import People from './pages/People'
 import Accounts from './pages/Accounts'
 import SettingsPage from './pages/Settings'
+import About from './pages/About'
 import Admin from './pages/Admin'
 import { getData, subscribe, loadAll, resetCache } from './lib/storage'
 import { IS_ADMIN_BUILD } from './lib/mode'
@@ -16,10 +19,12 @@ import { IS_ADMIN_BUILD } from './lib/mode'
 const PAGES = {
   dashboard:    Dashboard,
   transactions: Transactions,
+  budgets:      Budgets,
   goals:        Goals,
   people:       People,
   accounts:     Accounts,
   settings:     SettingsPage,
+  about:        About,
   admin:        Admin,
 }
 
@@ -105,9 +110,11 @@ const Shell = () => {
 }
 
 const App = () => (
-  <AuthProvider>
-    <Shell />
-  </AuthProvider>
+  <ToastProvider>
+    <AuthProvider>
+      <Shell />
+    </AuthProvider>
+  </ToastProvider>
 )
 
 export default App

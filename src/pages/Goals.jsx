@@ -3,6 +3,7 @@ import { Plus, Edit2, Trash2, Target, Plane, Calendar } from 'lucide-react'
 import Modal from '../components/Modal'
 import { addGoal, updateGoal, deleteGoal, contributeGoal } from '../lib/storage'
 import { fmtMoney, fmtDate, daysUntil } from '../lib/format'
+import { useToast } from '../context/ToastContext'
 
 const ICONS = ['🎯', '🏠', '🚗', '✈️', '🎓', '💍', '👶', '🩺', '💻', '📱', '🐷', '🏖️', '💼', '🛠️']
 
@@ -10,6 +11,7 @@ const empty = () => ({ name: '', target: '', saved: '', deadline: '', category: 
 
 const Goals = ({ data }) => {
   const { goals, settings } = data
+  const toast = useToast()
   const [modal, setModal] = useState(null)
   const [form, setForm] = useState(empty())
   const [contrib, setContrib] = useState({ open: false, id: null, amount: '' })
@@ -20,18 +22,19 @@ const Goals = ({ data }) => {
   }
   const close = () => { setModal(null); setForm(empty()) }
   const save = () => {
-    if (!form.name.trim()) return alert('Name your goal')
+    if (!form.name.trim()) return toast.error('Name your goal first')
     const payload = { ...form, target: Number(form.target) || 0, saved: Number(form.saved) || 0 }
-    if (modal.mode === 'new') addGoal(payload)
-    else updateGoal(modal.g.id, payload)
+    if (modal.mode === 'new') { addGoal(payload); toast.success('Goal created') }
+    else { updateGoal(modal.g.id, payload); toast.success('Goal updated') }
     close()
   }
-  const remove = (id) => { if (confirm('Delete this goal?')) { deleteGoal(id); close() } }
+  const remove = (id) => { if (confirm('Delete this goal?')) { deleteGoal(id); toast.info('Goal deleted'); close() } }
 
   const doContrib = () => {
     const amt = Number(contrib.amount) || 0
-    if (amt <= 0) return alert('Enter an amount')
+    if (amt <= 0) return toast.error('Enter an amount greater than zero')
     contributeGoal(contrib.id, amt)
+    toast.success(`${fmtMoney(amt, settings.currency)} added to your goal`)
     setContrib({ open: false, id: null, amount: '' })
   }
 

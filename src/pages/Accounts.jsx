@@ -4,6 +4,7 @@ import Modal from '../components/Modal'
 import { addAccount, updateAccount, deleteAccount, transfer } from '../lib/storage'
 import { fmtMoney } from '../lib/format'
 import { ACCOUNT_TYPES } from '../lib/categories'
+import { useToast } from '../context/ToastContext'
 
 const COLORS = ['#10b981', '#3b82f6', '#f59e0b', '#ef4444', '#8b5cf6', '#06b6d4', '#ec4899', '#64748b']
 const empty = () => ({ name: '', type: 'bank', balance: '', color: COLORS[0] })
@@ -12,6 +13,7 @@ const emptyTransfer = (accs) => ({ fromId: accs[0]?.id || '', toId: accs[1]?.id 
 
 const Accounts = ({ data }) => {
   const { accounts, settings } = data
+  const toast = useToast()
   const [modal, setModal] = useState(null)
   const [form, setForm] = useState(empty())
   const [trModal, setTrModal] = useState(false)
@@ -23,13 +25,13 @@ const Accounts = ({ data }) => {
   }
   const close = () => { setModal(null); setForm(empty()) }
   const save = () => {
-    if (!form.name.trim()) return alert('Name required')
+    if (!form.name.trim()) return toast.error('Account name is required')
     const payload = { ...form, balance: Number(form.balance) || 0 }
-    if (modal.mode === 'new') addAccount(payload)
-    else updateAccount(modal.a.id, payload)
+    if (modal.mode === 'new') { addAccount(payload); toast.success('Account added') }
+    else { updateAccount(modal.a.id, payload); toast.success('Account updated') }
     close()
   }
-  const remove = (id) => { if (confirm('Delete this account? All its transactions are also removed.')) { deleteAccount(id); close() } }
+  const remove = (id) => { if (confirm('Delete this account? All its transactions are also removed.')) { deleteAccount(id); toast.info('Account deleted'); close() } }
 
   const total = accounts.reduce((s, a) => s + (a.balance || 0), 0)
   const cur = settings.currency
@@ -139,9 +141,10 @@ const Accounts = ({ data }) => {
             <button onClick={() => setTrModal(false)} className="btn-ghost">Cancel</button>
             <button
               onClick={() => {
-                if (tr.fromId === tr.toId) return alert('Pick two different accounts')
+                if (tr.fromId === tr.toId) return toast.error('Pick two different accounts')
                 const ok = transfer(tr.fromId, tr.toId, tr.amount, tr.note)
-                if (!ok) return alert('Invalid amount or accounts')
+                if (!ok) return toast.error('Invalid amount or accounts')
+                toast.success('Transfer complete')
                 setTrModal(false)
               }}
               className="btn-primary"

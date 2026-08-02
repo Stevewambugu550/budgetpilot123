@@ -1,4 +1,4 @@
-import { LayoutDashboard, ArrowLeftRight, Target, Users, Wallet, Settings, Menu, X, LogOut } from 'lucide-react'
+import { LayoutDashboard, ArrowLeftRight, Target, Users, Wallet, PiggyBank, Settings, Info, Menu, X, LogOut } from 'lucide-react'
 import { useState } from 'react'
 import { useAuth } from '../context/AuthContext'
 import BudgetPilotLogo from './BudgetPilotLogo'
@@ -6,10 +6,15 @@ import BudgetPilotLogo from './BudgetPilotLogo'
 const BASE_NAV = [
   { id: 'dashboard',    label: 'Dashboard',    icon: LayoutDashboard },
   { id: 'transactions', label: 'Transactions', icon: ArrowLeftRight },
+  { id: 'budgets',      label: 'Budgets',      icon: PiggyBank },
   { id: 'goals',        label: 'Goals',        icon: Target },
   { id: 'people',       label: 'People',       icon: Users },
   { id: 'accounts',     label: 'Accounts',     icon: Wallet },
-  { id: 'settings',     label: 'Settings',     icon: Settings },
+]
+
+const FOOTER_NAV = [
+  { id: 'settings', label: 'Settings', icon: Settings },
+  { id: 'about',    label: 'About',    icon: Info },
 ]
 
 const Sidebar = ({ page, setPage }) => {
@@ -53,6 +58,27 @@ const Sidebar = ({ page, setPage }) => {
             </button>
           )
         })}
+
+        <div className="pt-2 mt-2 border-t border-slate-100 space-y-1">
+          {FOOTER_NAV.map(n => {
+            const Icon = n.icon
+            const active = page === n.id
+            return (
+              <button
+                key={n.id}
+                onClick={() => { setPage(n.id); setMobileOpen(false) }}
+                className={`w-full flex items-center gap-3 px-3 py-2.5 rounded-xl text-sm font-semibold transition-all ${
+                  active
+                    ? 'bg-brand-600 text-white shadow-md shadow-brand-600/25'
+                    : 'text-slate-500 hover:bg-slate-100'
+                }`}
+              >
+                <Icon className="w-4 h-4 flex-shrink-0" />
+                {n.label}
+              </button>
+            )
+          })}
+        </div>
       </nav>
 
       {/* User card */}

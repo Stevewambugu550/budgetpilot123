@@ -5,6 +5,7 @@ import { addTransaction, updateTransaction, deleteTransaction } from '../lib/sto
 import { fmtMoney, fmtDate } from '../lib/format'
 import { INCOME_CATEGORIES, EXPENSE_CATEGORIES, catMeta } from '../lib/categories'
 import { exportToExcel, exportTransactionsCSV } from '../lib/excel'
+import { useToast } from '../context/ToastContext'
 
 const empty = () => ({
   type: 'expense', amount: '', category: 'Food', accountId: '',
@@ -13,6 +14,7 @@ const empty = () => ({
 
 const Transactions = ({ data }) => {
   const { transactions, accounts, settings } = data
+  const toast = useToast()
   const [modal, setModal] = useState(null)
   const [form, setForm] = useState(empty())
   const [search, setSearch] = useState('')
@@ -27,10 +29,10 @@ const Transactions = ({ data }) => {
 
   const save = () => {
     const p = { ...form, amount: Number(form.amount) }
-    if (!p.amount || p.amount <= 0) return alert('Enter a valid amount')
-    if (!p.accountId) return alert('Pick an account')
-    if (modal.mode === 'new') addTransaction(p)
-    else updateTransaction(modal.tx.id, p)
+    if (!p.amount || p.amount <= 0) return toast.error('Enter a valid amount')
+    if (!p.accountId) return toast.error('Pick an account')
+    if (modal.mode === 'new') { addTransaction(p); toast.success(`${p.type === 'income' ? 'Income' : 'Expense'} added`) }
+    else { updateTransaction(modal.tx.id, p); toast.success('Transaction updated') }
     close()
   }
   const remove = (id) => {

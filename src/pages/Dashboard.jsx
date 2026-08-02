@@ -7,7 +7,7 @@ import { fmtMoney, ymKey, monthLabel } from '../lib/format'
 import { catMeta } from '../lib/categories'
 
 const Dashboard = ({ data, setPage }) => {
-  const { settings, transactions, accounts, goals, people } = data
+  const { settings, transactions, accounts, goals, people, budgets = [] } = data
   const currency = settings.currency
 
   const thisYM = ymKey(new Date().toISOString())
@@ -69,6 +69,19 @@ const Dashboard = ({ data, setPage }) => {
   const activePeople = people.filter(p => p.active).length
   const monthlyPayroll = people.filter(p => p.active).reduce((s, p) => s + (p.monthlyPay || 0), 0)
 
+  const budgetProgress = useMemo(() => {
+    const spendByCategory = new Map()
+    for (const t of transactions) {
+      if (t.type !== 'expense' || ymKey(t.date) !== thisYM) continue
+      spendByCategory.set(t.category, (spendByCategory.get(t.category) || 0) + t.amount)
+    }
+    return budgets.map(b => ({
+      ...b,
+      spent: spendByCategory.get(b.category) || 0,
+      pct: b.monthlyLimit > 0 ? Math.min(100, ((spendByCategory.get(b.category) || 0) / b.monthlyLimit) * 100) : 0,
+    })).sort((a, b) => b.pct - a.pct).slice(0, 4)
+  }, [budgets, transactions, thisYM])
+
   return (
     <div className="space-y-6">
       <div>
@@ -128,6 +141,38 @@ const Dashboard = ({ data, setPage }) => {
               </p>
             </div>
           )}
+        </div>
+      )}
+
+      {/* Budget progress */}
+      {budgetProgress.length > 0 && (
+        <div className="card p-5">
+          <div className="flex items-center justify-between mb-4">
+            <h3 className="font-bold flex items-center gap-2"><PiggyBank className="w-4 h-4 text-brand-600" /> Budget progress</h3>
+            <button onClick={() => setPage('budgets')} className="text-xs font-semibold text-brand-600">Manage budgets →</button>
+          </div>
+          <div className="grid sm:grid-cols-2 gap-4">
+            {budgetProgress.map(b => {
+              const meta = catMeta(b.category, 'expense')
+              const over = b.spent > b.monthlyLimit
+              return (
+                <div key={b.id}>
+                  <div className="flex items-center justify-between text-sm mb-1.5">
+                    <span className="font-semibold flex items-center gap-1.5">{meta.icon} {b.category}</span>
+                    <span className={`font-bold text-xs ${over ? 'text-rose-600' : 'text-slate-500'}`}>
+                      {fmtMoney(b.spent, currency)} / {fmtMoney(b.monthlyLimit, currency)}
+                    </span>
+                  </div>
+                  <div className="h-2 bg-slate-100 rounded-full overflow-hidden">
+                    <div
+                      className={`h-full rounded-full transition-all ${over ? 'bg-gradient-to-r from-rose-400 to-rose-600' : b.pct > 80 ? 'bg-gradient-to-r from-amber-400 to-amber-600' : 'bg-gradient-to-r from-brand-400 to-brand-600'}`}
+                      style={{ width: `${b.pct}%` }}
+                    />
+                  </div>
+                </div>
+              )
+            })}
+          </div>
         </div>
       )}
 

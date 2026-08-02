@@ -2,9 +2,11 @@ import { useState } from 'react'
 import { Download, Upload, Trash2, AlertTriangle } from 'lucide-react'
 import { updateSettings, exportJSON, importJSON, clearAll } from '../lib/storage'
 import { CURRENCIES } from '../lib/format'
+import { useToast } from '../context/ToastContext'
 
 const Settings = ({ data }) => {
   const { settings } = data
+  const toast = useToast()
   const [name, setName] = useState(settings.name)
   const [currency, setCurrency] = useState(settings.currency)
   const [iTarget, setITarget] = useState(String(settings.monthlyIncomeTarget || ''))
@@ -19,6 +21,7 @@ const Settings = ({ data }) => {
       monthlyExpenseLimit: Number(eLimit) || 0,
     })
     setSaved(true); setTimeout(() => setSaved(false), 1800)
+    toast.success('Settings saved')
   }
 
   const doExport = () => {
@@ -27,6 +30,7 @@ const Settings = ({ data }) => {
     const a = document.createElement('a')
     a.href = url; a.download = `budgetpilot-backup-${new Date().toISOString().slice(0,10)}.json`
     a.click(); URL.revokeObjectURL(url)
+    toast.success('Backup downloaded')
   }
 
   const doImport = (e) => {
@@ -34,7 +38,8 @@ const Settings = ({ data }) => {
     const reader = new FileReader()
     reader.onload = () => {
       const ok = importJSON(reader.result)
-      alert(ok ? 'Backup restored ✅' : 'Invalid file ❌')
+      if (ok) toast.success('Backup restored successfully')
+      else toast.error('Invalid backup file')
     }
     reader.readAsText(file)
     e.target.value = ''
@@ -44,6 +49,7 @@ const Settings = ({ data }) => {
     if (!confirm('Erase ALL data? This cannot be undone.')) return
     if (!confirm('Last chance — really erase everything?')) return
     clearAll()
+    toast.info('All data erased')
   }
 
   return (

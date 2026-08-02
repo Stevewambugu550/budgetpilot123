@@ -5,7 +5,7 @@
 html, body, #root { height: 100%; }
 body {
   font-family: 'Inter', system-ui, -apple-system, sans-serif;
-  background: #f1f5f9;
+  background: linear-gradient(135deg, #f8fafc 0%, #eef2ff 50%, #f0fdf4 100%);
   color: #0f172a;
   -webkit-font-smoothing: antialiased;
 }
@@ -18,16 +18,25 @@ body {
 
 @layer components {
   .card {
-    @apply bg-white/95 backdrop-blur rounded-3xl border border-slate-200/80 shadow-sm;
+    @apply bg-white/90 backdrop-blur rounded-3xl border border-slate-200/60 shadow-soft;
+  }
+  .card-gradient {
+    background: linear-gradient(135deg, rgba(255,255,255,0.95), rgba(248,250,252,0.9));
+    @apply rounded-3xl border border-slate-200/60 shadow-soft;
   }
   .btn {
     @apply inline-flex items-center justify-center gap-2 font-semibold rounded-2xl px-4 py-2.5 text-sm transition-all active:scale-[0.98];
   }
   .btn-primary {
-    @apply btn bg-brand-600 hover:bg-brand-700 text-white shadow-md shadow-brand-600/20;
+    @apply btn text-white shadow-lg;
+    background: linear-gradient(135deg, #15b870 0%, #0a9659 100%);
+  }
+  .btn-primary:hover {
+    filter: brightness(1.05);
+    box-shadow: 0 8px 25px -5px rgba(21,184,112,0.35);
   }
   .btn-ghost {
-    @apply btn bg-slate-100 hover:bg-slate-200 text-slate-700;
+    @apply btn bg-slate-100/80 hover:bg-slate-200 text-slate-700;
   }
   .btn-danger {
     @apply btn bg-rose-50 hover:bg-rose-100 text-rose-700;
@@ -42,11 +51,15 @@ body {
     @apply inline-flex items-center gap-1 text-xs font-bold px-2.5 py-1 rounded-full;
   }
   .gradient-hero {
-    background: radial-gradient(120% 120% at 0% 0%, rgba(21,184,112,0.12), transparent 60%),
-                radial-gradient(100% 100% at 100% 0%, rgba(59,130,246,0.08), transparent 50%),
+    background: radial-gradient(120% 120% at 0% 0%, rgba(21,184,112,0.10), transparent 60%),
+                radial-gradient(100% 100% at 100% 0%, rgba(99,102,241,0.08), transparent 50%),
                 #ffffff;
   }
   .glass {
-    @apply bg-white/80 backdrop-blur-xl border border-white/50 shadow-lg;
+    @apply bg-white/70 backdrop-blur-xl border border-white/60 shadow-soft;
+  }
+  .text-gradient {
+    @apply bg-clip-text text-transparent;
+    background-image: linear-gradient(135deg, #0f172a, #15b870);
   }
 }

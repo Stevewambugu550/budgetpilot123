@@ -82,15 +82,31 @@ const Dashboard = ({ data, setPage }) => {
     })).sort((a, b) => b.pct - a.pct).slice(0, 4)
   }, [budgets, transactions, thisYM])
 
+  const greeting = () => {
+    const h = new Date().getHours()
+    if (h < 12) return 'Good morning'
+    if (h < 18) return 'Good afternoon'
+    return 'Good evening'
+  }
+
   return (
     <div className="space-y-6">
-      <div>
-        <h1 className="text-2xl sm:text-3xl font-black tracking-tight">Welcome back 👋</h1>
-        <p className="text-slate-500 mt-1">Here's your money snapshot for {new Date().toLocaleDateString(undefined, { month: 'long', year: 'numeric' })}.</p>
+      <div className="card-gradient p-6 sm:p-8 relative overflow-hidden">
+        <div className="absolute -right-10 -top-10 w-64 h-64 rounded-full bg-gradient-to-br from-brand-400/20 to-violet-500/20 blur-3xl" />
+        <div className="relative z-10">
+          <p className="text-xs font-bold text-slate-500 uppercase tracking-wider mb-1">{greeting()}</p>
+          <h1 className="text-3xl sm:text-4xl font-black tracking-tight text-gradient">
+            {data.profile?.full_name || 'Welcome back'} 👋
+          </h1>
+          <p className="text-slate-500 mt-2 max-w-xl">
+            Here's your money snapshot for <span className="font-semibold text-slate-800">{new Date().toLocaleDateString(undefined, { month: 'long', year: 'numeric' })}</span>.
+            Watch your cash flow, budgets, and goals in one place.
+          </p>
+        </div>
       </div>
 
       {/* Top stats */}
-      <div className="grid grid-cols-2 lg:grid-cols-4 gap-3 sm:gap-4">
+      <div className="grid grid-cols-2 lg:grid-cols-4 gap-4 sm:gap-5">
         <StatCard icon={Wallet}        label="Net Worth"     value={fmtMoney(stats.netWorth, currency)} sub={`${accounts.length} accounts`} accent="brand" />
         <StatCard icon={ArrowUpCircle} label="Income (mo)"   value={fmtMoney(stats.income,   currency)} accent="emerald" trend={stats.incomeTrend} />
         <StatCard icon={ArrowDownCircle} label="Expenses (mo)" value={fmtMoney(stats.expense,  currency)} accent="rose"    trend={stats.expenseTrend} />

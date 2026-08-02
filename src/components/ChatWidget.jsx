@@ -2,9 +2,13 @@ import { useEffect, useRef, useState } from 'react'
 import {
   MessageCircle, X, Send, Bot, Loader2,
   Settings2, ExternalLink, Copy, Check, Sparkles, Key,
-  MessageSquare
+  MessageSquare, Wand2
 } from 'lucide-react'
 import { buildFinancialContext, sendChatMessage } from '../lib/chat'
+import { useToast } from '../context/ToastContext'
+import { addTransaction, addAccount, addGoal, addBudget, updateBudget } from '../lib/storage'
+import { INCOME_CATEGORIES, EXPENSE_CATEGORIES, ACCOUNT_TYPES } from '../lib/categories'
+import { fmtMoney } from '../lib/format'
 
 const WELCOME = {
   role: 'assistant',
@@ -38,6 +42,7 @@ My question: ${question || 'How am I doing financially and what should I focus o
 }
 
 export default function ChatWidget({ data }) {
+  const toast = useToast()
   const [open, setOpen] = useState(() => localStorage.getItem(STORAGE_KEY) === 'true')
   const [input, setInput] = useState('')
   const [messages, setMessages] = useState([WELCOME])
@@ -45,6 +50,7 @@ export default function ChatWidget({ data }) {
   const [error, setError] = useState('')
   const [mode, setMode] = useState('chat') // 'chat' | 'options'
   const [copied, setCopied] = useState(false)
+  const [pendingAction, setPendingAction] = useState(null)
   const endRef = useRef(null)
   const inputRef = useRef(null)
 
@@ -52,12 +58,26 @@ export default function ChatWidget({ data }) {
   useEffect(() => { endRef.current?.scrollIntoView({ behavior: 'smooth' }) }, [messages, open])
   useEffect(() => { if (open && mode === 'chat') inputRef.current?.focus() }, [open, mode])
 
+  const parseAction = (reply) => {
+    const idx = reply.indexOf('[ACTION]')
+    if (idx === -1) return { text: reply, action: null }
+    const text = reply.slice(0, idx).trim()
+    const raw = reply.slice(idx + 8).trim()
+    try {
+      const parsed = JSON.parse(raw)
+      return { text, action: parsed }
+    } catch {
+      return { text: reply, action: null }
+    }
+  }
+
   const handleSend = async (e) => {
     e.preventDefault()
     const text = input.trim()
     if (!text || loading) return
     setInput('')
     setError('')
+    setPendingAction(null)
     const next = [...messages, { role: 'user', content: text }]
     setMessages(next)
     setLoading(true)
@@ -65,7 +85,9 @@ export default function ChatWidget({ data }) {
     try {
       const context = buildFinancialContext(data)
       const reply = await sendChatMessage(next, context)
-      setMessages([...next, { role: 'assistant', content: reply }])
+      const { text: displayText, action } = parseAction(reply)
+      setMessages([...next, { role: 'assistant', content: displayText }])
+      if (action) setPendingAction(action)
     } catch (err) {
       const msg = err.message || 'Something went wrong. Please try again.'
       setError(msg)
@@ -74,6 +96,73 @@ export default function ChatWidget({ data }) {
       }
     } finally {
       setLoading(false)
+    }
+  }
+
+  const resolveAccount = (name) => data.accounts.find(a => a.name.toLowerCase() === (name || '').toLowerCase())
+  const validType = (t) => ['income', 'expense'].includes(t) ? t : 'expense'
+  const validCategory = (type, cat) => {
+    const list = type === 'income' ? INCOME_CATEGORIES : EXPENSE_CATEGORIES
+    const found = list.find(c => c.id.toLowerCase() === (cat || '').toLowerCase())
+    return found ? found.id : 'Other'
+  }
+  const today = () => new Date().toISOString().slice(0, 10)
+
+  const executeAction = async () => {
+    if (!pendingAction) return
+    const { action, payload } = pendingAction
+    try {
+      if (action === 'addTransaction') {
+        const type = validType(payload.type)
+        const category = validCategory(type, payload.category)
+        const account = resolveAccount(payload.account)
+        const amount = Math.abs(Number(payload.amount) || 0)
+        if (!amount) throw new Error('Missing amount')
+        if (!account) throw new Error(`Account "${payload.account}" not found. Tell the user the exact account name.`)
+        await addTransaction({
+          type,
+          amount,
+          category,
+          accountId: account.id,
+          date: payload.date || today(),
+          note: payload.note || `${category} via AI`,
+        })
+        toast.success(`Added ${type}: ${fmtMoney(amount, data.settings.currency)} to ${account.name}`)
+      } else if (action === 'addAccount') {
+        const type = ACCOUNT_TYPES.find(t => t.id === (payload.type || '').toLowerCase()) ? payload.type.toLowerCase() : 'bank'
+        const balance = Number(payload.balance) || 0
+        const colors = ['#10b981', '#3b82f6', '#f59e0b', '#ef4444', '#8b5cf6', '#06b6d4', '#ec4899', '#64748b']
+        const color = colors[Math.floor(Math.random() * colors.length)]
+        await addAccount({ name: (payload.name || 'New account').trim(), type, balance, color })
+        toast.success(`Account "${payload.name}" added`)
+      } else if (action === 'addGoal') {
+        const target = Math.abs(Number(payload.target) || 0)
+        if (!target) throw new Error('Missing target amount')
+        await addGoal({
+          name: (payload.name || 'Goal').trim(),
+          target,
+          saved: Number(payload.saved) || 0,
+          deadline: payload.deadline || '',
+          category: payload.category || 'Savings',
+          note: payload.note || '',
+        })
+        toast.success(`Goal "${payload.name}" added`)
+      } else if (action === 'setBudget') {
+        const category = validCategory('expense', payload.category)
+        const limit = Math.abs(Number(payload.monthlyLimit) || 0)
+        if (!limit) throw new Error('Missing monthly limit')
+        const existing = data.budgets?.find(b => b.category.toLowerCase() === category.toLowerCase())
+        if (existing) await updateBudget(existing.id, { monthlyLimit: limit })
+        else await addBudget({ category, monthlyLimit: limit })
+        toast.success(`Budget for ${category} set to ${fmtMoney(limit, data.settings.currency)}`)
+      } else {
+        throw new Error(`Unknown action: ${action}`)
+      }
+      setMessages(prev => [...prev, { role: 'assistant', content: `Done — I've applied the ${action} for you.` }])
+    } catch (e) {
+      toast.error(e.message || 'Action failed')
+    } finally {
+      setPendingAction(null)
     }
   }
 
@@ -207,6 +296,25 @@ export default function ChatWidget({ data }) {
                     </div>
                   </div>
                 ))}
+                {pendingAction && (
+                  <div className="flex justify-start">
+                    <div className="bg-brand-50 border border-brand-200 rounded-xl rounded-bl-none px-3 py-2 text-sm w-full">
+                      <div className="flex items-center gap-2 mb-1.5">
+                        <Wand2 className="w-4 h-4 text-brand-600" />
+                        <span className="font-semibold text-brand-800">Suggested action</span>
+                      </div>
+                      <p className="text-xs text-slate-600 mb-2">
+                        {pendingAction.action}: {JSON.stringify(pendingAction.payload)}
+                      </p>
+                      <button
+                        onClick={executeAction}
+                        className="btn-primary text-xs py-1.5 px-3"
+                      >
+                        <Check className="w-3.5 h-3.5" /> Confirm
+                      </button>
+                    </div>
+                  </div>
+                )}
                 {loading && (
                   <div className="flex justify-start">
                     <div className="bg-white border border-slate-200 rounded-xl rounded-bl-none px-3 py-2 text-sm text-slate-500 flex items-center gap-2">

@@ -1,6 +1,7 @@
 import { useMemo, useState } from 'react'
 import { Search, Edit2, Trash2, ArrowUpCircle, ArrowDownCircle, FileSpreadsheet, FileDown } from 'lucide-react'
 import Modal from '../components/Modal'
+import AccountSelect from '../components/AccountSelect'
 import { addTransaction, updateTransaction, deleteTransaction } from '../lib/storage'
 import { fmtMoney, fmtDate } from '../lib/format'
 import { INCOME_CATEGORIES, EXPENSE_CATEGORIES, catMeta } from '../lib/categories'
@@ -12,7 +13,7 @@ const empty = () => ({
   date: new Date().toISOString().slice(0, 10), note: '',
 })
 
-const Transactions = ({ data }) => {
+const Transactions = ({ data, setPage }) => {
   const { transactions, accounts, settings } = data
   const toast = useToast()
   const [modal, setModal] = useState(null)
@@ -167,9 +168,13 @@ const Transactions = ({ data }) => {
           </div>
           <div>
             <label className="label">Account</label>
-            <select value={form.accountId} onChange={e => setForm(f => ({ ...f, accountId: e.target.value }))} className="input">
-              {accounts.map(a => <option key={a.id} value={a.id}>{a.name}</option>)}
-            </select>
+            <AccountSelect
+              accounts={accounts}
+              value={form.accountId}
+              onChange={(id) => setForm(f => ({ ...f, accountId: id }))}
+              currency={cur}
+              onAddClick={() => { close(); setPage?.('accounts') }}
+            />
           </div>
           <div>
             <label className="label">Note (optional)</label>

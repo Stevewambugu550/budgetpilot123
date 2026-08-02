@@ -1,6 +1,7 @@
 import { useState } from 'react'
-import { Plus, Edit2, Trash2, Wallet, ArrowLeftRight } from 'lucide-react'
+import { Plus, Edit2, Trash2, Wallet, ArrowLeftRight, CreditCard, MoreHorizontal } from 'lucide-react'
 import Modal from '../components/Modal'
+import AccountSelect from '../components/AccountSelect'
 import { addAccount, updateAccount, deleteAccount, transfer } from '../lib/storage'
 import { fmtMoney } from '../lib/format'
 import { ACCOUNT_TYPES } from '../lib/categories'
@@ -10,6 +11,55 @@ const COLORS = ['#10b981', '#3b82f6', '#f59e0b', '#ef4444', '#8b5cf6', '#06b6d4'
 const empty = () => ({ name: '', type: 'bank', balance: '', color: COLORS[0] })
 
 const emptyTransfer = (accs) => ({ fromId: accs[0]?.id || '', toId: accs[1]?.id || '', amount: '', note: '' })
+
+const typeMeta = (id) => ACCOUNT_TYPES.find(t => t.id === id) || ACCOUNT_TYPES[ACCOUNT_TYPES.length - 1]
+
+const maskId = (id) => id ? `**** ${id.slice(-4).toUpperCase()}` : '****'
+
+const AccountCard = ({ account, currency, onEdit, onDelete, onTransfer }) => {
+  const t = typeMeta(account.type)
+  return (
+    <div className="group relative h-52 rounded-3xl p-5 text-white shadow-lg overflow-hidden transition-transform hover:-translate-y-1">
+      <div className="absolute inset-0" style={{ background: account.color || COLORS[0] }} />
+      <div className="absolute inset-0 bg-gradient-to-br from-slate-900/40 via-slate-900/20 to-transparent" />
+      <div className="absolute -bottom-10 -right-10 w-40 h-40 rounded-full bg-white/10" />
+      <div className="absolute -top-10 -right-10 w-32 h-32 rounded-full bg-white/10" />
+
+      <div className="relative h-full flex flex-col">
+        <div className="flex items-start justify-between">
+          <div className="flex items-center gap-2">
+            <div className="w-10 h-10 rounded-xl bg-white/20 backdrop-blur flex items-center justify-center text-xl">
+              {t.icon}
+            </div>
+            <div>
+              <p className="font-bold text-sm leading-tight">{account.name}</p>
+              <p className="text-[10px] uppercase tracking-wider text-white/70">{t.label}</p>
+            </div>
+          </div>
+          <div className="relative">
+            <button className="p-1.5 rounded-lg hover:bg-white/20 opacity-80 group-hover:opacity-100 transition">
+              <MoreHorizontal className="w-4 h-4" />
+            </button>
+            <div className="absolute right-0 top-8 hidden group-hover:flex flex-col gap-1 bg-white/95 backdrop-blur rounded-xl p-1 shadow-xl min-w-[8rem] z-10">
+              <button onClick={() => onEdit(account)} className="text-left text-xs font-semibold text-slate-700 px-3 py-2 rounded-lg hover:bg-slate-100 flex items-center gap-2"><Edit2 className="w-3.5 h-3.5" /> Edit</button>
+              <button onClick={() => onTransfer(account)} className="text-left text-xs font-semibold text-slate-700 px-3 py-2 rounded-lg hover:bg-slate-100 flex items-center gap-2"><ArrowLeftRight className="w-3.5 h-3.5" /> Transfer</button>
+              <button onClick={() => onDelete(account.id)} className="text-left text-xs font-semibold text-rose-600 px-3 py-2 rounded-lg hover:bg-rose-50 flex items-center gap-2"><Trash2 className="w-3.5 h-3.5" /> Delete</button>
+            </div>
+          </div>
+        </div>
+
+        <div className="mt-auto">
+          <p className="text-xs text-white/70 uppercase tracking-widest font-bold">Balance</p>
+          <p className={`text-3xl font-black mt-1 ${account.balance < 0 ? 'text-rose-200' : ''}`}>{fmtMoney(account.balance, currency)}</p>
+          <div className="flex items-center gap-2 mt-2 text-white/80">
+            <CreditCard className="w-4 h-4" />
+            <span className="text-xs font-mono tracking-wide">{maskId(account.id)}</span>
+          </div>
+        </div>
+      </div>
+    </div>
+  )
+}
 
 const Accounts = ({ data }) => {
   const { accounts, settings } = data
@@ -35,59 +85,56 @@ const Accounts = ({ data }) => {
 
   const total = accounts.reduce((s, a) => s + (a.balance || 0), 0)
   const cur = settings.currency
-  const typeMeta = (id) => ACCOUNT_TYPES.find(t => t.id === id) || ACCOUNT_TYPES[ACCOUNT_TYPES.length - 1]
+
+  const startTransfer = (a) => { setTr({ ...emptyTransfer(accounts), fromId: a.id }); setTrModal(true) }
+
+  const doTransfer = () => {
+    if (tr.fromId === tr.toId) return toast.error('Pick two different accounts')
+    if (!tr.amount || Number(tr.amount) <= 0) return toast.error('Enter a valid amount')
+    transfer(tr.fromId, tr.toId, tr.amount, tr.note)
+    toast.success('Transfer complete')
+    setTrModal(false)
+  }
 
   return (
     <div className="space-y-6">
       <div className="flex flex-wrap items-center justify-between gap-3">
         <div>
           <h1 className="text-2xl sm:text-3xl font-black tracking-tight">Accounts</h1>
-          <p className="text-slate-500 text-sm mt-1">Checking, savings, credit cards, cash — keep them separate.</p>
+          <p className="text-slate-500 text-sm mt-1">Cards, cash, mobile money — all in one place.</p>
         </div>
-        <div className="flex gap-2">
-          {accounts.length >= 2 && (
-            <button onClick={() => { setTr(emptyTransfer(accounts)); setTrModal(true) }} className="btn-ghost">
-              <ArrowLeftRight className="w-4 h-4" /> Transfer
-            </button>
-          )}
-          <button onClick={() => open()} className="btn-primary"><Plus className="w-4 h-4" /> New account</button>
-        </div>
+        <button onClick={() => open()} className="btn-primary"><Plus className="w-4 h-4" /> New account</button>
       </div>
 
-      <div className="card p-6 bg-gradient-to-br from-brand-700 to-brand-900 text-white">
-        <p className="text-xs uppercase font-bold tracking-widest text-brand-200">Total balance</p>
-        <p className="text-4xl font-black mt-1">{fmtMoney(total, cur)}</p>
-        <p className="text-sm text-brand-200 mt-2">Across {accounts.length} account{accounts.length !== 1 && 's'}</p>
+      {/* Total balance hero */}
+      <div className="card p-6 sm:p-8 gradient-hero relative overflow-hidden">
+        <div className="relative z-10">
+          <p className="text-xs uppercase font-bold tracking-widest text-slate-500">Total balance</p>
+          <p className="text-4xl sm:text-5xl font-black mt-2 text-slate-900">{fmtMoney(total, cur)}</p>
+          <p className="text-sm text-slate-500 mt-2">Across {accounts.length} account{accounts.length !== 1 && 's'}</p>
+        </div>
       </div>
 
       {accounts.length === 0 ? (
         <div className="card p-10 text-center">
           <div className="w-16 h-16 mx-auto bg-brand-50 rounded-2xl flex items-center justify-center mb-3"><Wallet className="w-8 h-8 text-brand-600" /></div>
-          <p className="font-bold">No accounts</p>
+          <p className="font-bold text-slate-900">No accounts</p>
+          <p className="text-sm text-slate-500 mt-1">Add your first account to start tracking money.</p>
           <button onClick={() => open()} className="btn-primary mt-4"><Plus className="w-4 h-4" /> Add one</button>
         </div>
       ) : (
-        <div className="grid sm:grid-cols-2 lg:grid-cols-3 gap-4">
-          {accounts.map(a => {
-            const t = typeMeta(a.type)
-            return (
-              <div key={a.id} className="card p-5 relative overflow-hidden">
-                <div className="absolute top-0 right-0 w-32 h-32 rounded-full opacity-10 -mr-12 -mt-12" style={{ background: a.color }} />
-                <div className="flex items-start justify-between relative">
-                  <div>
-                    <p className="text-2xl">{t.icon}</p>
-                    <p className="font-bold mt-2 truncate">{a.name}</p>
-                    <p className="text-xs text-slate-500 uppercase font-bold tracking-wider">{t.label}</p>
-                  </div>
-                  <button onClick={() => open(a)} className="p-1.5 rounded-lg hover:bg-slate-100 text-slate-500"><Edit2 className="w-4 h-4" /></button>
-                </div>
-                <p className={`text-2xl font-black mt-4 ${a.balance < 0 ? 'text-rose-600' : 'text-slate-900'}`}>{fmtMoney(a.balance, cur)}</p>
-              </div>
-            )
-          })}
+        <div className="grid sm:grid-cols-2 lg:grid-cols-3 gap-5">
+          {accounts.map(a => (
+            <AccountCard key={a.id} account={a} currency={cur} onEdit={open} onDelete={remove} onTransfer={startTransfer} />
+          ))}
+          <button onClick={() => open()} className="h-52 rounded-3xl border-2 border-dashed border-slate-300 flex flex-col items-center justify-center gap-3 text-slate-500 hover:border-brand-400 hover:text-brand-600 hover:bg-brand-50/50 transition">
+            <div className="w-14 h-14 rounded-2xl bg-slate-100 flex items-center justify-center"><Plus className="w-7 h-7" /></div>
+            <span className="font-semibold text-sm">Add account</span>
+          </button>
         </div>
       )}
 
+      {/* New/Edit account modal */}
       <Modal open={!!modal} onClose={close}
         title={modal?.mode === 'edit' ? 'Edit account' : 'New account'}
         footer={
@@ -108,27 +155,29 @@ const Accounts = ({ data }) => {
             <div className="grid grid-cols-4 gap-2">
               {ACCOUNT_TYPES.map(t => (
                 <button key={t.id} type="button" onClick={() => setForm(f => ({ ...f, type: t.id }))}
-                  className={`flex flex-col items-center gap-1 py-2 rounded-xl text-xs font-semibold border-2 ${form.type === t.id ? 'border-brand-500 bg-brand-50' : 'border-transparent bg-slate-50 hover:bg-slate-100'}`}>
+                  className={`flex flex-col items-center gap-1 py-3 rounded-2xl text-xs font-semibold border-2 transition ${form.type === t.id ? 'border-brand-500 bg-brand-50' : 'border-transparent bg-slate-50 hover:bg-slate-100'}`}>
                   <span className="text-lg">{t.icon}</span>
                   {t.label}
                 </button>
               ))}
             </div>
           </div>
-          <div>
-            <label className="label">Starting balance</label>
-            <input type="number" className="input" value={form.balance} onChange={e => setForm(f => ({ ...f, balance: e.target.value }))} placeholder="0" />
-            <p className="text-xs text-slate-400 mt-1">Tip: transactions will adjust this automatically.</p>
-          </div>
-          <div>
-            <label className="label">Color</label>
-            <div className="flex flex-wrap gap-2">
-              {COLORS.map(c => (
-                <button key={c} type="button" onClick={() => setForm(f => ({ ...f, color: c }))}
-                  className={`w-8 h-8 rounded-full border-4 ${form.color === c ? 'border-slate-300' : 'border-white'}`} style={{ background: c }} />
-              ))}
+          <div className="grid grid-cols-2 gap-3">
+            <div>
+              <label className="label">Starting balance</label>
+              <input type="number" className="input" value={form.balance} onChange={e => setForm(f => ({ ...f, balance: e.target.value }))} placeholder="0" />
+            </div>
+            <div>
+              <label className="label">Color</label>
+              <div className="flex flex-wrap gap-2">
+                {COLORS.map(c => (
+                  <button key={c} type="button" onClick={() => setForm(f => ({ ...f, color: c }))}
+                    className={`w-9 h-9 rounded-full border-4 ${form.color === c ? 'border-slate-300' : 'border-white'}`} style={{ background: c }} />
+                ))}
+              </div>
             </div>
           </div>
+          <p className="text-xs text-slate-400">Tip: transactions will adjust the balance automatically.</p>
         </div>
       </Modal>
 
@@ -139,48 +188,27 @@ const Accounts = ({ data }) => {
         footer={
           <>
             <button onClick={() => setTrModal(false)} className="btn-ghost">Cancel</button>
-            <button
-              onClick={() => {
-                if (tr.fromId === tr.toId) return toast.error('Pick two different accounts')
-                const ok = transfer(tr.fromId, tr.toId, tr.amount, tr.note)
-                if (!ok) return toast.error('Invalid amount or accounts')
-                toast.success('Transfer complete')
-                setTrModal(false)
-              }}
-              className="btn-primary"
-            >
-              Transfer
-            </button>
+            <button onClick={doTransfer} className="btn-primary">Transfer</button>
           </>
         }
       >
         <div className="space-y-4">
-          <div className="grid grid-cols-[1fr_auto_1fr] gap-2 items-end">
-            <div>
-              <label className="label">From</label>
-              <select className="input" value={tr.fromId} onChange={e => setTr(s => ({ ...s, fromId: e.target.value }))}>
-                {accounts.map(a => <option key={a.id} value={a.id}>{a.name}</option>)}
-              </select>
-            </div>
-            <div className="pb-2 text-slate-400">
-              <ArrowLeftRight className="w-5 h-5" />
-            </div>
-            <div>
-              <label className="label">To</label>
-              <select className="input" value={tr.toId} onChange={e => setTr(s => ({ ...s, toId: e.target.value }))}>
-                {accounts.map(a => <option key={a.id} value={a.id}>{a.name}</option>)}
-              </select>
-            </div>
+          <div>
+            <label className="label">From</label>
+            <AccountSelect accounts={accounts} value={tr.fromId} onChange={(id) => setTr(s => ({ ...s, fromId: id }))} currency={cur} />
+          </div>
+          <div>
+            <label className="label">To</label>
+            <AccountSelect accounts={accounts} value={tr.toId} onChange={(id) => setTr(s => ({ ...s, toId: id }))} currency={cur} />
           </div>
           <div>
             <label className="label">Amount</label>
-            <input type="number" min="0" autoFocus className="input" value={tr.amount} onChange={e => setTr(s => ({ ...s, amount: e.target.value }))} placeholder="0" />
+            <input type="number" min="0" step="0.01" className="input" value={tr.amount} onChange={e => setTr(s => ({ ...s, amount: e.target.value }))} placeholder="0.00" />
           </div>
           <div>
             <label className="label">Note (optional)</label>
-            <input className="input" value={tr.note} onChange={e => setTr(s => ({ ...s, note: e.target.value }))} placeholder="e.g. Moving to savings" />
+            <input className="input" value={tr.note} onChange={e => setTr(s => ({ ...s, note: e.target.value }))} placeholder="e.g. Savings top-up" />
           </div>
-          <p className="text-xs text-slate-500">A linked transaction is created on each account so your history stays consistent.</p>
         </div>
       </Modal>
     </div>

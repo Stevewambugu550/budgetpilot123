@@ -16,8 +16,21 @@ CREATE TABLE IF NOT EXISTS app_users (
   role          text NOT NULL DEFAULT 'user'
                   CHECK (role IN ('user','it','admin','superadmin')),
   active        boolean NOT NULL DEFAULT true,
+  last_login_at timestamptz,
+  login_count   integer NOT NULL DEFAULT 0,
   created_at    timestamptz DEFAULT now()
 );
+
+CREATE TABLE IF NOT EXISTS app_login_history (
+  id          uuid PRIMARY KEY DEFAULT gen_random_uuid(),
+  user_id     text NOT NULL REFERENCES app_users(id) ON DELETE CASCADE,
+  email       text NOT NULL,
+  ip          text DEFAULT '',
+  user_agent  text DEFAULT '',
+  device      text DEFAULT '',
+  created_at  timestamptz DEFAULT now()
+);
+CREATE INDEX IF NOT EXISTS login_history_user_idx ON app_login_history(user_id, created_at DESC);
 
 -- ─── AUDIT LOG ───────────────────────────────────────────────
 -- Records every admin action for accountability.

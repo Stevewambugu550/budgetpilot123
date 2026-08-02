@@ -97,6 +97,7 @@ const Admin = () => {
         goals:        d.goals        || [],
         people:       d.people       || [],
         payments:     d.payments     || [],
+        loginHistory: d.loginHistory || [],
       })
     } catch (e) { setErr(e.message) }
   }
@@ -238,6 +239,12 @@ const Admin = () => {
                 <span className={`chip ${selected.active === false ? 'bg-rose-100 text-rose-700' : 'bg-emerald-100 text-emerald-700'}`}>
                   {selected.active === false ? 'Suspended' : 'Active'}
                 </span>
+                <span className="chip bg-sky-100 text-sky-700 ml-2">
+                  {selected.loginCount ?? 0} logins
+                </span>
+              </p>
+              <p className="text-xs text-slate-400 flex items-center gap-2 mt-0.5">
+                Last login: {selected.lastLoginAt ? new Date(selected.lastLoginAt).toLocaleString() : 'Never'}
               </p>
             </div>
             <div className="flex flex-col gap-2">
@@ -320,6 +327,36 @@ const Admin = () => {
               {!detail.people.length && <p className="text-sm text-slate-500">No people.</p>}
             </ul>
           </div>
+        </div>
+
+        <div className="card p-5">
+          <h3 className="font-bold mb-3 flex items-center gap-2"><Activity className="w-4 h-4" /> Login history ({detail.loginHistory.length})</h3>
+          {detail.loginHistory.length === 0 ? (
+            <p className="text-sm text-slate-500">No logins recorded yet.</p>
+          ) : (
+            <div className="overflow-x-auto">
+              <table className="w-full text-sm">
+                <thead>
+                  <tr className="text-left text-xs font-bold text-slate-500 border-b">
+                    <th className="py-2">Date/Time</th>
+                    <th>Device</th>
+                    <th>IP</th>
+                    <th>User agent</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {detail.loginHistory.slice(0, 50).map(h => (
+                    <tr key={h.id} className="border-b border-slate-50">
+                      <td className="py-2 text-xs text-slate-500 whitespace-nowrap">{new Date(h.createdAt).toLocaleString()}</td>
+                      <td className="text-xs">{h.device}</td>
+                      <td className="text-xs font-mono">{h.ip}</td>
+                      <td className="text-xs text-slate-500 truncate max-w-xs">{h.userAgent}</td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          )}
         </div>
 
         <div className="card p-5">
@@ -551,6 +588,8 @@ const Admin = () => {
                       <tr className="text-left text-xs font-bold uppercase tracking-wide text-slate-400 bg-slate-50 border-b border-slate-100">
                         <th className="py-3 px-4">User</th>
                         <th className="px-2 hidden md:table-cell">Joined</th>
+                        <th className="px-2 hidden md:table-cell">Last login</th>
+                        <th className="px-2">Logins</th>
                         <th className="px-2">Status</th>
                         <th className="px-2">Role</th>
                         <th className="px-4 text-right">Actions</th>
@@ -574,6 +613,8 @@ const Admin = () => {
                             </button>
                           </td>
                           <td className="px-2 text-xs text-slate-400 hidden md:table-cell whitespace-nowrap">{fmtDate(u.createdAt)}</td>
+                          <td className="px-2 text-xs text-slate-500 hidden md:table-cell whitespace-nowrap">{u.lastLoginAt ? fmtDate(u.lastLoginAt) : '—'}</td>
+                          <td className="px-2 text-xs font-semibold text-slate-600 whitespace-nowrap">{u.loginCount ?? 0}</td>
                           <td className="px-2">
                             <span className={`chip ${isSuspended ? 'bg-rose-100 text-rose-700' : 'bg-emerald-100 text-emerald-700'}`}>
                               {isSuspended ? 'Suspended' : 'Active'}

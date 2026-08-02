@@ -38,7 +38,7 @@ export const handler = async (event) => {
   try {
     // Public — no token needed
     if (action === 'signup') return ok(await signup(sql, payload))
-    if (action === 'signin') return ok(await signin(sql, payload))
+    if (action === 'signin') return ok(await signin(sql, payload, event))
 
     // All other actions need a valid session
     const token = (event.headers['authorization'] || '').replace('Bearer ', '').trim()
@@ -93,7 +93,7 @@ async function signup(sql, { email, password, fullName }) {
   return { token, user: { id: userId, email: key, fullName: name, role } }
 }
 
-async function signin(sql, { email, password }) {
+async function signin(sql, { email, password }, event) {
   if (!email || !password) throw err('Email and password required', 400)
   const key = email.toLowerCase().trim()
 
@@ -113,11 +113,34 @@ async function signin(sql, { email, password }) {
     INSERT INTO app_sessions (token, user_id, email, full_name, role, expires_at)
     VALUES (${token}, ${user.id}, ${user.email}, ${user.full_name}, ${user.role}, ${expiresAt})
   `
+
+  // Record login event
+  const ip = (event?.headers || {})['x-nf-client-connection-ip'] ||
+             (event?.headers || {})['x-forwarded-for'] ||
+             (event?.headers || {})['client-ip'] || 'unknown'
+  const ua = (event?.headers || {})['user-agent'] || 'unknown'
+  const device = parseDevice(ua)
+  await Promise.all([
+    sql`UPDATE app_users SET last_login_at = now(), login_count = login_count + 1 WHERE id = ${user.id}`,
+    sql`INSERT INTO app_login_history (user_id, email, ip, user_agent, device) VALUES (${user.id}, ${user.email}, ${ip}, ${ua}, ${device})`,
+  ])
+
   return { token, user: { id: user.id, email: user.email, fullName: user.full_name, role: user.role } }
 }
 
 // Error helper
 const err = (msg, status = 400) => Object.assign(new Error(msg), { status })
+
+// Quick device string from user-agent
+const parseDevice = (ua) => {
+  if (!ua || ua === 'unknown') return 'Unknown device'
+  const isMobile = /Mobile|Android|iPhone|iPad|iPod/.test(ua)
+  const isTablet = /iPad|Tablet/.test(ua)
+  const os = /Windows/.test(ua) ? 'Windows' : /Mac/.test(ua) ? 'Mac' : /Linux/.test(ua) ? 'Linux' : /Android/.test(ua) ? 'Android' : /iPhone|iPad|iPod/.test(ua) ? 'iOS' : 'Other'
+  const browser = /Chrome/.test(ua) ? 'Chrome' : /Safari/.test(ua) ? 'Safari' : /Firefox/.test(ua) ? 'Firefox' : /Edge/.test(ua) ? 'Edge' : 'Browser'
+  const type = isTablet ? 'Tablet' : isMobile ? 'Mobile' : 'Desktop'
+  return `${type} · ${os} · ${browser}`
+}
 
 // ─── Router ───────────────────────────────────────────────────────────
 async function dispatch(sql, session, action, payload) {
@@ -472,7 +495,7 @@ async function logAudit(sql, session, action, target = {}, details = '') {
 async function adminLoadAll(sql, session) {
   requireAdmin(session)
   const [profiles, transactions] = await Promise.all([
-    sql`SELECT id, email, full_name AS "fullName", role, active, created_at AS "createdAt" FROM app_users ORDER BY created_at DESC`,
+    sql`SELECT id, email, full_name AS "fullName", role, active, last_login_at AS "lastLoginAt", login_count AS "loginCount", created_at AS "createdAt" FROM app_users ORDER BY created_at DESC`,
     sql`SELECT * FROM transactions ORDER BY created_at DESC LIMIT 500`,
   ])
   return { profiles, transactions: transactions.map(mapTx) }
@@ -480,14 +503,15 @@ async function adminLoadAll(sql, session) {
 
 async function adminLoadUser(sql, session, { targetUserId }) {
   requireAdmin(session)
-  const [accounts, transactions, goals, people, payments] = await Promise.all([
+  const [accounts, transactions, goals, people, payments, loginHistory] = await Promise.all([
     sql`SELECT * FROM accounts     WHERE user_id=${targetUserId} ORDER BY created_at`,
     sql`SELECT * FROM transactions WHERE user_id=${targetUserId} ORDER BY date DESC`,
     sql`SELECT * FROM goals        WHERE user_id=${targetUserId}`,
     sql`SELECT * FROM people       WHERE user_id=${targetUserId}`,
     sql`SELECT * FROM payments     WHERE user_id=${targetUserId} ORDER BY date DESC`,
+    sql`SELECT id, email, ip, user_agent AS "userAgent", device, created_at AS "createdAt" FROM app_login_history WHERE user_id=${targetUserId} ORDER BY created_at DESC LIMIT 50`,
   ])
-  return { accounts: accounts.map(mapAcc), transactions: transactions.map(mapTx), goals: goals.map(mapGoal), people: people.map(mapPer), payments: payments.map(mapPay) }
+  return { accounts: accounts.map(mapAcc), transactions: transactions.map(mapTx), goals: goals.map(mapGoal), people: people.map(mapPer), payments: payments.map(mapPay), loginHistory }
 }
 
 async function adminChangeRole(sql, session, { targetUserId, role }) {
@@ -534,12 +558,13 @@ async function adminDeleteUser(sql, session, { targetUserId }) {
   if (targetUserId === session.user_id) throw err("You can't delete your own account", 400)
   const [target] = await sql`SELECT email FROM app_users WHERE id = ${targetUserId}`
   await Promise.all([
-    sql`DELETE FROM payments     WHERE user_id = ${targetUserId}`,
-    sql`DELETE FROM budgets      WHERE user_id = ${targetUserId}`,
-    sql`DELETE FROM transactions WHERE user_id = ${targetUserId}`,
-    sql`DELETE FROM goals        WHERE user_id = ${targetUserId}`,
-    sql`DELETE FROM people       WHERE user_id = ${targetUserId}`,
-    sql`DELETE FROM accounts     WHERE user_id = ${targetUserId}`,
+    sql`DELETE FROM payments          WHERE user_id = ${targetUserId}`,
+    sql`DELETE FROM budgets           WHERE user_id = ${targetUserId}`,
+    sql`DELETE FROM transactions      WHERE user_id = ${targetUserId}`,
+    sql`DELETE FROM goals             WHERE user_id = ${targetUserId}`,
+    sql`DELETE FROM people            WHERE user_id = ${targetUserId}`,
+    sql`DELETE FROM accounts          WHERE user_id = ${targetUserId}`,
+    sql`DELETE FROM app_login_history WHERE user_id = ${targetUserId}`,
   ])
   await sql`DELETE FROM profiles     WHERE id = ${targetUserId}`
   await sql`DELETE FROM app_sessions WHERE user_id = ${targetUserId}`

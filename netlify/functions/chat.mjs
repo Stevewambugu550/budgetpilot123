@@ -51,8 +51,8 @@ export const handler = async (event) => {
   ]
 
   const providers = [
-    () => callGroq(fullMessages),
     () => callGemini(fullMessages),
+    () => callGroq(fullMessages),
     () => callOpenRouter(fullMessages),
   ]
 

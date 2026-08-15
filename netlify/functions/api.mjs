@@ -37,8 +37,9 @@ export const handler = async (event) => {
 
   try {
     // Public — no token needed
-    if (action === 'signup') return ok(await signup(sql, payload))
-    if (action === 'signin') return ok(await signin(sql, payload, event))
+    if (action === 'signup')       return ok(await signup(sql, payload))
+    if (action === 'signin')       return ok(await signin(sql, payload, event))
+    if (action === 'googleSignIn') return ok(await googleSignIn(sql, payload))
 
     // All other actions need a valid session
     const token = (event.headers['authorization'] || '').replace('Bearer ', '').trim()
@@ -128,6 +129,49 @@ async function signin(sql, { email, password }, event) {
   return { token, user: { id: user.id, email: user.email, fullName: user.full_name, role: user.role } }
 }
 
+// ─── Google Sign-In ───────────────────────────────────────────────────
+async function googleSignIn(sql, { idToken }) {
+  if (!idToken) throw err('Missing Google ID token', 400)
+
+  const res  = await fetch(`https://oauth2.googleapis.com/tokeninfo?id_token=${idToken}`)
+  const info = await res.json()
+  if (!res.ok || info.error_description) throw err(info.error_description || 'Invalid Google token', 401)
+
+  const clientId = process.env.GOOGLE_CLIENT_ID
+  if (clientId && info.aud !== clientId) throw err('Token audience mismatch', 401)
+
+  const email = (info.email || '').toLowerCase().trim()
+  if (!email) throw err('Google account has no email', 400)
+  const name  = info.name || email.split('@')[0]
+
+  let rows = await sql`SELECT * FROM app_users WHERE email = ${email}`
+  if (!rows.length) {
+    const userId = newId()
+    const role   = email === OWNER_EMAIL ? 'admin' : 'user'
+    await sql`
+      INSERT INTO app_users (id, email, full_name, salt, password_hash, role)
+      VALUES (${userId}, ${email}, ${name}, '', '', ${role})
+    `
+    await sql`
+      INSERT INTO profiles (id, email, full_name, role)
+      VALUES (${userId}, ${email}, ${name}, ${role})
+      ON CONFLICT (id) DO NOTHING
+    `
+    rows = await sql`SELECT * FROM app_users WHERE id = ${userId}`
+  }
+
+  const user = rows[0]
+  if (user.active === false) throw err('This account has been suspended. Contact an administrator.', 403)
+
+  const token     = newToken()
+  const expiresAt = new Date(Date.now() + 30 * 24 * 60 * 60 * 1000).toISOString()
+  await sql`
+    INSERT INTO app_sessions (token, user_id, email, full_name, role, expires_at)
+    VALUES (${token}, ${user.id}, ${email}, ${user.full_name}, ${user.role}, ${expiresAt})
+  `
+  return { token, user: { id: user.id, email, fullName: user.full_name, role: user.role } }
+}
+
 // Error helper
 const err = (msg, status = 400) => Object.assign(new Error(msg), { status })
 
@@ -175,6 +219,14 @@ async function dispatch(sql, session, action, payload) {
     case 'updateBudget': return updateBudget(sql, payload)
     case 'deleteBudget': return deleteBudget(sql, payload)
 
+    case 'addBill':    return addBill(sql, userId, payload)
+    case 'updateBill': return updateBill(sql, payload)
+    case 'deleteBill': return deleteBill(sql, payload)
+
+    case 'addDebt':    return addDebt(sql, userId, payload)
+    case 'updateDebt': return updateDebt(sql, payload)
+    case 'deleteDebt': return deleteDebt(sql, payload)
+
     case 'transfer':  return transfer(sql, userId, payload)
     case 'payPerson': return payPersonAction(sql, userId, payload)
     case 'importAll': return importAll(sql, userId, payload)
@@ -201,10 +253,12 @@ const mapGoal = r => ({ id: r.id, name: r.name, target: Number(r.target) || 0, s
 const mapPer  = r => ({ id: r.id, name: r.name, role: r.role || '', monthlyPay: Number(r.monthly_pay) || 0, hireDate: r.hire_date || '', phone: r.phone || '', note: r.note || '', active: !!r.active })
 const mapPay  = r => ({ id: r.id, personId: r.person_id, accountId: r.account_id, amount: Number(r.amount) || 0, date: r.date, note: r.note || '' })
 const mapBud  = r => ({ id: r.id, category: r.category, monthlyLimit: Number(r.monthly_limit) || 0 })
+const mapBill = r => ({ id: r.id, name: r.name, amount: Number(r.amount) || 0, dueDay: r.due_day, frequency: r.frequency, category: r.category, autoPay: !!r.auto_pay, notes: r.notes || '', active: !!r.active, lastPaidDate: r.last_paid_date ? String(r.last_paid_date).slice(0,10) : null })
+const mapDebt = r => ({ id: r.id, name: r.name, debtType: r.debt_type, balance: Number(r.balance) || 0, interestRate: Number(r.interest_rate) || 0, minimumPayment: Number(r.minimum_payment) || 0, dueDay: r.due_day ?? null, notes: r.notes || '' })
 
 // ─── loadAll ──────────────────────────────────────────────────────────
 async function loadAll(sql, userId) {
-  const [profRows, accounts, transactions, goals, people, payments, budgets] = await Promise.all([
+  const [profRows, accounts, transactions, goals, people, payments, budgets, bills, debts] = await Promise.all([
     sql`SELECT * FROM profiles WHERE id = ${userId}`,
     sql`SELECT * FROM accounts WHERE user_id = ${userId} ORDER BY created_at`,
     sql`SELECT * FROM transactions WHERE user_id = ${userId} ORDER BY date DESC, created_at DESC`,
@@ -212,6 +266,8 @@ async function loadAll(sql, userId) {
     sql`SELECT * FROM people WHERE user_id = ${userId} ORDER BY created_at`,
     sql`SELECT * FROM payments WHERE user_id = ${userId} ORDER BY date DESC`,
     sql`SELECT * FROM budgets WHERE user_id = ${userId} ORDER BY created_at`,
+    sql`SELECT * FROM bills WHERE user_id = ${userId} AND active = true ORDER BY due_day`,
+    sql`SELECT * FROM debts WHERE user_id = ${userId} ORDER BY created_at`,
   ])
   const p = profRows[0]
   return {
@@ -227,6 +283,8 @@ async function loadAll(sql, userId) {
     people:       people.map(mapPer),
     payments:     payments.map(mapPay),
     budgets:      budgets.map(mapBud),
+    bills:        bills.map(mapBill),
+    debts:        debts.map(mapDebt),
   }
 }
 
@@ -416,6 +474,60 @@ async function deleteBudget(sql, { id }) {
   return null
 }
 
+// ─── Bills ────────────────────────────────────────────────────────────
+async function addBill(sql, userId, b) {
+  const rows = await sql`
+    INSERT INTO bills (user_id, name, amount, due_day, frequency, category, auto_pay, notes)
+    VALUES (${userId}, ${b.name}, ${Number(b.amount)||0}, ${b.dueDay||1}, ${b.frequency||'monthly'}, ${b.category||'Bills'}, ${!!b.autoPay}, ${b.notes||''})
+    RETURNING *`
+  return mapBill(rows[0])
+}
+async function updateBill(sql, { id, ...b }) {
+  const rows = await sql`
+    UPDATE bills SET
+      name           = COALESCE(${b.name           ?? null}, name),
+      amount         = COALESCE(${b.amount         != null ? Number(b.amount) : null}::numeric, amount),
+      due_day        = COALESCE(${b.dueDay         != null ? Number(b.dueDay) : null}::integer, due_day),
+      frequency      = COALESCE(${b.frequency      ?? null}, frequency),
+      category       = COALESCE(${b.category       ?? null}, category),
+      auto_pay       = COALESCE(${b.autoPay        != null ? Boolean(b.autoPay) : null}::boolean, auto_pay),
+      notes          = COALESCE(${b.notes          ?? null}, notes),
+      active         = COALESCE(${b.active         != null ? Boolean(b.active) : null}::boolean, active),
+      last_paid_date = COALESCE(${b.lastPaidDate   ?? null}::date, last_paid_date)
+    WHERE id = ${id}::uuid RETURNING *`
+  return mapBill(rows[0])
+}
+async function deleteBill(sql, { id }) {
+  await sql`DELETE FROM bills WHERE id = ${id}::uuid`
+  return null
+}
+
+// ─── Debts ────────────────────────────────────────────────────────────
+async function addDebt(sql, userId, d) {
+  const rows = await sql`
+    INSERT INTO debts (user_id, name, debt_type, balance, interest_rate, minimum_payment, due_day, notes)
+    VALUES (${userId}, ${d.name}, ${d.debtType||'other'}, ${Number(d.balance)||0}, ${Number(d.interestRate)||0}, ${Number(d.minimumPayment)||0}, ${d.dueDay??null}, ${d.notes||''})
+    RETURNING *`
+  return mapDebt(rows[0])
+}
+async function updateDebt(sql, { id, ...d }) {
+  const rows = await sql`
+    UPDATE debts SET
+      name            = COALESCE(${d.name           ?? null}, name),
+      debt_type       = COALESCE(${d.debtType       ?? null}, debt_type),
+      balance         = COALESCE(${d.balance        != null ? Number(d.balance)        : null}::numeric, balance),
+      interest_rate   = COALESCE(${d.interestRate   != null ? Number(d.interestRate)   : null}::numeric, interest_rate),
+      minimum_payment = COALESCE(${d.minimumPayment != null ? Number(d.minimumPayment) : null}::numeric, minimum_payment),
+      due_day         = COALESCE(${d.dueDay         != null ? Number(d.dueDay)         : null}::integer, due_day),
+      notes           = COALESCE(${d.notes          ?? null}, notes)
+    WHERE id = ${id}::uuid RETURNING *`
+  return mapDebt(rows[0])
+}
+async function deleteDebt(sql, { id }) {
+  await sql`DELETE FROM debts WHERE id = ${id}::uuid`
+  return null
+}
+
 // ─── Transfer ─────────────────────────────────────────────────────────
 async function transfer(sql, userId, { fromId, toId, amount, note }) {
   const amt = Number(amount) || 0
@@ -444,7 +556,7 @@ async function payPersonAction(sql, userId, { personId, amount, accountId, note 
 }
 
 // ─── Import / Clear ───────────────────────────────────────────────────
-async function importAll(sql, userId, { accounts=[], transactions=[], goals=[], people=[], payments=[], budgets=[] }) {
+async function importAll(sql, userId, { accounts=[], transactions=[], goals=[], people=[], payments=[], budgets=[], bills=[], debts=[] }) {
   await clearAll(sql, userId)
   const today = new Date().toISOString().slice(0,10)
   for (const a of accounts)     await sql`INSERT INTO accounts (user_id,name,type,balance,color) VALUES (${userId},${a.name},${a.type||'bank'},${Number(a.balance)||0},${a.color||'#3b82f6'})`
@@ -452,10 +564,12 @@ async function importAll(sql, userId, { accounts=[], transactions=[], goals=[], 
   for (const g of goals)        await sql`INSERT INTO goals (user_id,name,target,saved,deadline,category,note) VALUES (${userId},${g.name},${Number(g.target)||0},${Number(g.saved)||0},${g.deadline||null},${g.category||''},${g.note||''})`
   for (const p of people)       await sql`INSERT INTO people (user_id,name,role,monthly_pay,hire_date,phone,note,active) VALUES (${userId},${p.name},${p.role||''},${Number(p.monthlyPay)||0},${p.hireDate||null},${p.phone||''},${p.note||''},${p.active!==false})`
   for (const b of budgets)      await sql`INSERT INTO budgets (user_id,category,monthly_limit) VALUES (${userId},${b.category},${Number(b.monthlyLimit)||0}) ON CONFLICT (user_id,category) DO UPDATE SET monthly_limit=EXCLUDED.monthly_limit`
+  for (const b of bills)        await sql`INSERT INTO bills (user_id,name,amount,due_day,frequency,category,auto_pay,notes) VALUES (${userId},${b.name},${Number(b.amount)||0},${b.dueDay||1},${b.frequency||'monthly'},${b.category||'Bills'},${!!b.autoPay},${b.notes||''})`
+  for (const d of debts)        await sql`INSERT INTO debts (user_id,name,debt_type,balance,interest_rate,minimum_payment,due_day,notes) VALUES (${userId},${d.name},${d.debtType||'other'},${Number(d.balance)||0},${Number(d.interestRate)||0},${Number(d.minimumPayment)||0},${d.dueDay??null},${d.notes||''})`
   return null
 }
 async function clearAll(sql, userId) {
-  await Promise.all([sql`DELETE FROM payments WHERE user_id=${userId}`, sql`DELETE FROM budgets WHERE user_id=${userId}`])
+  await Promise.all([sql`DELETE FROM payments WHERE user_id=${userId}`, sql`DELETE FROM budgets WHERE user_id=${userId}`, sql`DELETE FROM bills WHERE user_id=${userId}`, sql`DELETE FROM debts WHERE user_id=${userId}`])
   await sql`DELETE FROM transactions WHERE user_id=${userId}`
   await sql`DELETE FROM goals WHERE user_id=${userId}`
   await sql`DELETE FROM people WHERE user_id=${userId}`

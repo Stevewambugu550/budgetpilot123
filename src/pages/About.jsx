@@ -1,6 +1,6 @@
 import {
   Wallet, ArrowLeftRight, Target, Users, PiggyBank, Shield, Lock, Server,
-  Github, Mail, Heart,
+  Receipt, CreditCard, Heart,
 } from 'lucide-react'
 import BudgetPilotLogo from '../components/BudgetPilotLogo'
 
@@ -9,6 +9,8 @@ const FEATURES = [
   { icon: ArrowLeftRight,title: 'Transactions', desc: 'Log income and expenses, categorize them, and transfer between accounts.' },
   { icon: PiggyBank,     title: 'Budgets',      desc: 'Set monthly limits per category and see exactly how close you are to going over.' },
   { icon: Target,        title: 'Goals',        desc: 'Save toward a target with a deadline and watch your progress bar fill up.' },
+  { icon: Receipt,       title: 'Bills',        desc: 'Track recurring bills with due dates, auto-pay status, and mark-paid workflow.' },
+  { icon: CreditCard,    title: 'Debt tracker', desc: 'Snowball or avalanche your debts with payoff projections and interest calculations.' },
   { icon: Users,         title: 'People',       desc: 'Track payroll and payments to employees, contractors, or family members.' },
   { icon: Shield,        title: 'Admin console',desc: 'Role-based administration with suspend/reactivate, password reset, and a full audit log.' },
 ]
@@ -48,7 +50,7 @@ const About = () => {
           {FEATURES.map(f => (
             <div key={f.title} className="flex items-start gap-3">
               <div className="w-9 h-9 rounded-xl bg-brand-50 text-brand-600 flex items-center justify-center flex-shrink-0">
-                <f.icon className="w-4.5 h-4.5" />
+                <f.icon className="w-5 h-5" />
               </div>
               <div>
                 <p className="font-semibold text-sm">{f.title}</p>

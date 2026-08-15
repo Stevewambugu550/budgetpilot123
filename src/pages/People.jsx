@@ -19,23 +19,30 @@ const People = ({ data }) => {
     setModal({ mode: p ? 'edit' : 'new', p })
   }
   const close = () => { setModal(null); setForm(empty()) }
-  const save = () => {
+  const save = async () => {
     if (!form.name.trim()) return toast.error('Name is required')
     const payload = { ...form, monthlyPay: Number(form.monthlyPay) || 0 }
-    if (modal.mode === 'new') { addPerson(payload); toast.success('Person added') }
-    else { updatePerson(modal.p.id, payload); toast.success('Person updated') }
-    close()
+    try {
+      if (modal.mode === 'new') { await addPerson(payload); toast.success('Person added') }
+      else { await updatePerson(modal.p.id, payload); toast.success('Person updated') }
+      close()
+    } catch { toast.error('Something went wrong — try again') }
   }
-  const remove = (id) => { if (confirm('Remove this person? Payment history is also deleted.')) { deletePerson(id); toast.info('Person removed'); close() } }
+  const remove = async (id) => {
+    if (!confirm('Remove this person? Payment history is also deleted.')) return
+    try { await deletePerson(id); toast.info('Person removed'); close() } catch { toast.error('Could not remove — try again') }
+  }
 
   const openPay = (person) => setPay({ open: true, person, amount: String(person.monthlyPay || ''), accountId: accounts[0]?.id, note: '' })
-  const doPay = () => {
+  const doPay = async () => {
     const amt = Number(pay.amount) || 0
     if (amt <= 0) return toast.error('Enter an amount greater than zero')
     if (!pay.accountId) return toast.error('Pick an account to pay from')
-    payPerson(pay.person.id, amt, pay.accountId, pay.note)
-    toast.success(`Payment of ${fmtMoney(amt, settings.currency)} recorded`)
-    setPay({ open: false, person: null, amount: '', accountId: '', note: '' })
+    try {
+      await payPerson(pay.person.id, amt, pay.accountId, pay.note)
+      toast.success(`Payment of ${fmtMoney(amt, settings.currency)} recorded`)
+      setPay({ open: false, person: null, amount: '', accountId: '', note: '' })
+    } catch { toast.error('Could not record payment — try again') }
   }
 
   const totals = useMemo(() => {

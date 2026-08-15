@@ -1,7 +1,8 @@
 import { useState } from 'react'
 import {
   LayoutDashboard, ArrowLeftRight, Target, Users, Wallet, PiggyBank,
-  Settings, Info, Menu, X, LogOut, Sparkles
+  Settings, Info, Menu, X, LogOut, Sparkles, Receipt, CreditCard,
+  Brain, Home
 } from 'lucide-react'
 import { useAuth } from '../context/AuthContext'
 import BudgetPilotLogo from './BudgetPilotLogo'
@@ -10,8 +11,12 @@ const BASE_NAV = [
   { id: 'dashboard',    label: 'Dashboard',    icon: LayoutDashboard },
   { id: 'transactions', label: 'Transactions', icon: ArrowLeftRight },
   { id: 'budgets',      label: 'Budgets',      icon: PiggyBank },
+  { id: 'bills',        label: 'Bills',        icon: Receipt },
+  { id: 'debts',        label: 'Debt',         icon: CreditCard },
   { id: 'goals',        label: 'Goals',        icon: Target },
   { id: 'people',       label: 'People',       icon: Users },
+  { id: 'family',       label: 'Family',       icon: Home },
+  { id: 'ai',           label: 'Pilot AI',     icon: Brain },
   { id: 'accounts',     label: 'Accounts',     icon: Wallet },
 ]
 
@@ -60,7 +65,7 @@ const Sidebar = ({ page, setPage }) => {
           )
         })}
 
-        <div className="pt-3 mt-3 border-t border-slate-100/80 space-y-1.5">
+        <div className="pt-4 mt-2 space-y-1.5">
           {FOOTER_NAV.map(n => {
             const Icon = n.icon
             const active = page === n.id

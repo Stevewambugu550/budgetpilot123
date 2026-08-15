@@ -12,6 +12,8 @@ const EMPTY = {
   people:       [],
   payments:     [],
   budgets:      [],
+  bills:        [],
+  debts:        [],
   ready:        false,
 }
 
@@ -43,6 +45,8 @@ export const loadAll = async (userId) => {
       people:       d.people       || [],
       payments:     d.payments     || [],
       budgets:      d.budgets      || [],
+      bills:        d.bills         || [],
+      debts:        d.debts         || [],
       ready:        true,
     }
   } catch (e) {
@@ -69,6 +73,8 @@ const reload = async () => {
     people:       d.people       || [],
     payments:     d.payments     || [],
     budgets:      d.budgets      || [],
+    bills:        d.bills         || [],
+    debts:        d.debts         || [],
     ready:        true,
   }
   emit()
@@ -189,7 +195,41 @@ export const deleteBudget = async (id) => {
   await reload()
 }
 
-// ─── Accounts helpers ─────────────────────────────────────────────────
+// ─── Bills ──────────────────────────────────────────────────────────────
+export const addBill = async (b) => {
+  if (!currentUserId) return
+  await callApi('addBill', b)
+  await reload()
+}
+export const updateBill = async (id, patch) => {
+  await callApi('updateBill', { id, ...patch })
+  await reload()
+}
+export const deleteBill = async (id) => {
+  await callApi('deleteBill', { id })
+  await reload()
+}
+export const markBillPaid = async (id) => {
+  const today = new Date().toISOString().slice(0, 10)
+  await updateBill(id, { lastPaidDate: today })
+}
+
+// ─── Debts ──────────────────────────────────────────────────────────────
+export const addDebt = async (d) => {
+  if (!currentUserId) return
+  await callApi('addDebt', d)
+  await reload()
+}
+export const updateDebt = async (id, patch) => {
+  await callApi('updateDebt', { id, ...patch })
+  await reload()
+}
+export const deleteDebt = async (id) => {
+  await callApi('deleteDebt', { id })
+  await reload()
+}
+
+// ─── Accounts helpers ─────────────────────────────────────────────────────
 export const transfer = (fromId, toId, amount, note) => {
   const amt = Number(amount) || 0
   if (!amt || !fromId || !toId || fromId === toId) return false
@@ -199,8 +239,8 @@ export const transfer = (fromId, toId, amount, note) => {
 
 // ─── Settings helpers ─────────────────────────────────────────────────
 export const exportJSON = () => {
-  const { settings, accounts, transactions, goals, people, payments, budgets } = cache
-  return JSON.stringify({ settings, accounts, transactions, goals, people, payments, budgets }, null, 2)
+  const { settings, accounts, transactions, goals, people, payments, budgets, bills, debts } = cache
+  return JSON.stringify({ settings, accounts, transactions, goals, people, payments, budgets, bills, debts }, null, 2)
 }
 
 export const importJSON = (jsonStr) => {

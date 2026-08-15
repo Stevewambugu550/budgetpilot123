@@ -43,6 +43,17 @@ export const AuthProvider = ({ children }) => {
     setUser(null)
   }
 
+  const signInWithGoogle = async (idToken) => {
+    try {
+      const { token, user: u } = await callApi('googleSignIn', { idToken })
+      saveSession(token, u)
+      setUser(u)
+      return { error: null }
+    } catch (e) {
+      return { error: e }
+    }
+  }
+
   // Stub — profile is the user object itself (role etc. already in it)
   const refreshProfile = async () => {}
 
@@ -65,6 +76,7 @@ export const AuthProvider = ({ children }) => {
     signIn,
     signUp,
     signOut,
+    signInWithGoogle,
     refreshProfile,
   }
 

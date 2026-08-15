@@ -3,13 +3,18 @@ import { Loader2, Shield, LogOut } from 'lucide-react'
 import { AuthProvider, useAuth } from './context/AuthContext'
 import { ToastProvider } from './context/ToastContext'
 import AuthPage from './pages/AuthPage'
+import LandingPage from './pages/LandingPage'
 import Sidebar from './components/Sidebar'
 import ChatWidget from './components/ChatWidget'
 import Dashboard from './pages/Dashboard'
 import Transactions from './pages/Transactions'
 import Budgets from './pages/Budgets'
 import Goals from './pages/Goals'
+import Bills from './pages/Bills'
+import Debts from './pages/Debts'
 import People from './pages/People'
+import Family from './pages/Family'
+import AiInsights from './pages/AiInsights'
 import Accounts from './pages/Accounts'
 import SettingsPage from './pages/Settings'
 import About from './pages/About'
@@ -22,7 +27,11 @@ const PAGES = {
   transactions: Transactions,
   budgets:      Budgets,
   goals:        Goals,
+  bills:        Bills,
+  debts:        Debts,
   people:       People,
+  family:       Family,
+  ai:           AiInsights,
   accounts:     Accounts,
   settings:     SettingsPage,
   about:        About,
@@ -33,6 +42,7 @@ const Shell = () => {
   const { user, canViewAdmin, loading, signOut: signOutSafe } = useAuth()
   const [page, setPage] = useState(() => localStorage.getItem('bp_page') || 'dashboard')
   const [data, setData] = useState(getData())
+  const [authMode, setAuthMode] = useState(null)
 
   // Persist current page across reloads
   useEffect(() => { localStorage.setItem('bp_page', page) }, [page])
@@ -41,7 +51,7 @@ const Shell = () => {
   useEffect(() => {
     const off = subscribe(setData)
     if (user) loadAll(user.id)
-    else resetCache()
+    else { resetCache(); setAuthMode(null) }
     return off
   }, [user?.id])
 
@@ -53,7 +63,10 @@ const Shell = () => {
     )
   }
 
-  if (!user) return <AuthPage />
+  if (!user) {
+    if (!authMode) return <LandingPage onGetStarted={(mode) => setAuthMode(mode)} />
+    return <AuthPage initialMode={authMode} onBack={() => setAuthMode(null)} />
+  }
 
   // ─── Admin-only deployment ───────────────────────────────
   if (IS_ADMIN_BUILD) {
@@ -74,13 +87,7 @@ const Shell = () => {
         </div>
       )
     }
-    return (
-      <div className="min-h-screen bg-slate-50">
-        <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-6 lg:py-10">
-          <Admin />
-        </div>
-      </div>
-    )
+    return <Admin />
   }
 
   // ─── Regular user app ────────────────────────────────────

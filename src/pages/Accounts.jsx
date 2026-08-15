@@ -97,14 +97,19 @@ const Accounts = ({ data }) => {
     setModal({ mode: a ? 'edit' : 'new', a })
   }
   const close = () => { setModal(null); setForm(empty()) }
-  const save = () => {
+  const save = async () => {
     if (!form.name.trim()) return toast.error('Account name is required')
     const payload = { ...form, balance: Number(form.balance) || 0 }
-    if (modal.mode === 'new') { addAccount(payload); toast.success('Account added') }
-    else { updateAccount(modal.a.id, payload); toast.success('Account updated') }
-    close()
+    try {
+      if (modal.mode === 'new') { await addAccount(payload); toast.success('Account added') }
+      else { await updateAccount(modal.a.id, payload); toast.success('Account updated') }
+      close()
+    } catch { toast.error('Something went wrong — try again') }
   }
-  const remove = (id) => { if (confirm('Delete this account? All its transactions are also removed.')) { deleteAccount(id); toast.info('Account deleted'); close() } }
+  const remove = async (id) => {
+    if (!confirm('Delete this account? All its transactions are also removed.')) return
+    try { await deleteAccount(id); toast.info('Account deleted'); close() } catch { toast.error('Could not delete — try again') }
+  }
 
   const total = accounts.reduce((s, a) => s + (a.balance || 0), 0)
   const cur = settings.currency
@@ -112,10 +117,11 @@ const Accounts = ({ data }) => {
   const startTransfer = (a) => { setTr({ ...emptyTransfer(accounts), fromId: a.id }); setTrModal(true) }
   const startQuick = (a, type) => { setTx({ ...emptyTx(a), type, category: type === 'income' ? 'Salary' : 'Food' }); setQuick(a) }
   const closeQuick = () => { setQuick(null); setTx(emptyTx()) }
-  const doQuick = () => {
+  const doQuick = async () => {
     const p = { ...tx, amount: Number(tx.amount) }
     if (!p.amount || p.amount <= 0) return toast.error('Enter a valid amount')
-    addTransaction(p); toast.success(`${quick.name}: ${p.type} added`); closeQuick()
+    try { await addTransaction(p); toast.success(`${quick.name}: ${p.type} added`); closeQuick() }
+    catch { toast.error('Something went wrong — try again') }
   }
 
   const doTransfer = () => {

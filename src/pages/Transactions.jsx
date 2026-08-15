@@ -31,17 +31,19 @@ const Transactions = ({ data, setPage }) => {
   const openEdit = (tx) => { setForm({ ...tx, amount: String(tx.amount) }); setModal({ mode: 'edit', tx }) }
   const close = () => { setModal(null); setForm(empty()) }
 
-  const save = () => {
+  const save = async () => {
     const p = { ...form, amount: Number(form.amount) }
     if (!p.amount || p.amount <= 0) return toast.error('Enter a valid amount')
     if (!p.accountId) return toast.error('Pick an account')
-    if (modal.mode === 'new') { addTransaction(p); toast.success(`${p.type === 'income' ? 'Income' : 'Expense'} added`) }
-    else { updateTransaction(modal.tx.id, p); toast.success('Transaction updated') }
-    close()
+    try {
+      if (modal.mode === 'new') { await addTransaction(p); toast.success(`${p.type === 'income' ? 'Income' : 'Expense'} added`) }
+      else { await updateTransaction(modal.tx.id, p); toast.success('Transaction updated') }
+      close()
+    } catch { toast.error('Something went wrong — try again') }
   }
-  const remove = (id) => {
+  const remove = async (id) => {
     if (!confirm('Delete this transaction? It will also reverse the account balance.')) return
-    deleteTransaction(id); close()
+    try { await deleteTransaction(id); close() } catch { toast.error('Could not delete — try again') }
   }
   const onFilePick = () => fileRef.current?.click()
   const onFileChange = async (e) => {

@@ -33,7 +33,7 @@ interface AuthContextType {
     details: string,
     status?: "success" | "warning" | "blocked"
   ) => void;
-  loginWithGoogle: (customEmail?: string, customName?: string) => void;
+  loginWithGoogle: (customEmail?: string, customName?: string) => { success: boolean; error?: string };
   loginWithEmail: (email: string, pass: string) => { success: boolean; error?: string };
   signup: (name: string, email: string, pass: string, role?: UserRole) => { success: boolean; error?: string };
   switchUser: (userId: string) => void;
@@ -58,6 +58,7 @@ const USERS_STORAGE_KEY = "household_users_v1";
 const CURRENT_USER_KEY = "household_current_user_id_v1";
 const LOGS_STORAGE_KEY = "household_audit_logs_v1";
 const SECURITY_SETTINGS_KEY = "household_security_settings_v1";
+const IS_LOGGED_IN_KEY = "household_is_logged_in_v1";
 
 export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children }) => {
   // Load stored users or defaults
@@ -102,12 +103,29 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
   const [isAppLocked, setIsAppLocked] = useState(false);
   const [notifications, setNotifications] = useState<AppNotification[]>(INITIAL_NOTIFICATIONS);
 
+  // Access is denied by default. Only a successful sign-in against an
+  // approved account (see loginWithEmail / loginWithGoogle / switchUser)
+  // unlocks the app. Nothing is shown to unauthenticated visitors.
+  const [isLoggedIn, setIsLoggedIn] = useState<boolean>(() => {
+    try {
+      return localStorage.getItem(IS_LOGGED_IN_KEY) === "true";
+    } catch (e) {
+      return false;
+    }
+  });
+
   // Sync state to LocalStorage
   useEffect(() => {
     try {
       localStorage.setItem(USERS_STORAGE_KEY, JSON.stringify(users));
     } catch (e) {}
   }, [users]);
+
+  useEffect(() => {
+    try {
+      localStorage.setItem(IS_LOGGED_IN_KEY, isLoggedIn ? "true" : "false");
+    } catch (e) {}
+  }, [isLoggedIn]);
 
   useEffect(() => {
     try {
@@ -213,88 +231,65 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
 
   const loginWithGoogle = (
     customEmail = "stephenngatia443@gmail.com",
-    customName = "Stephen Ngatia"
+    _customName = "Stephen Ngatia"
   ) => {
-    // Check if user already exists
-    let existing = users.find((u) => u.email.toLowerCase() === customEmail.toLowerCase());
-    if (existing) {
-      const updatedUser = {
-        ...existing,
-        lastLogin: new Date().toISOString(),
-        authProvider: "google" as const,
-      };
-      setUsers((prev) => prev.map((u) => (u.id === existing.id ? updatedUser : u)));
-      setCurrentUserId(existing.id);
-      logAudit("Google OAuth Login", "auth", `Signed in with Google Account (${customEmail})`);
-    } else {
-      const newUser: UserAccount = {
-        id: `user-google-${Date.now()}`,
-        email: customEmail,
-        name: customName,
-        role: "admin",
-        avatarUrl: `https://api.dicebear.com/7.x/bottts/svg?seed=${encodeURIComponent(customEmail)}`,
-        authProvider: "google",
-        is2FAEnabled: true,
-        twoFactorSecret: "SEC-" + Math.floor(1000 + Math.random() * 9000),
-        pinCode: "1234",
-        createdAt: new Date().toISOString(),
-        lastLogin: new Date().toISOString(),
-        permissions: DEFAULT_PERMISSIONS.admin,
-      };
-      setUsers((prev) => [newUser, ...prev]);
-      setCurrentUserId(newUser.id);
-      logAudit("Google OAuth Signup", "auth", `Created and authenticated account (${customEmail}) via Google SSO`);
+    // Access is invite-only: Google sign-in can only authenticate an email
+    // that already belongs to an approved account. Unknown emails are
+    // rejected instead of silently creating a brand-new admin account.
+    const existing = users.find((u) => u.email.toLowerCase() === customEmail.toLowerCase());
+    if (!existing) {
+      logAudit("Failed Google Login", "auth", `Unapproved email attempted Google sign-in: ${customEmail}`, "blocked");
+      return { success: false, error: "This Google account is not on the approved access list. Contact your administrator." };
     }
+    const updatedUser = {
+      ...existing,
+      lastLogin: new Date().toISOString(),
+      authProvider: "google" as const,
+    };
+    setUsers((prev) => prev.map((u) => (u.id === existing.id ? updatedUser : u)));
+    setCurrentUserId(existing.id);
+    setIsLoggedIn(true);
+    logAudit("Google OAuth Login", "auth", `Signed in with Google Account (${customEmail})`);
+    return { success: true };
   };
 
-  const loginWithEmail = (email: string, _pass: string) => {
+  const loginWithEmail = (email: string, pass: string) => {
     const user = users.find((u) => u.email.toLowerCase() === email.toLowerCase());
     if (!user) {
-      logAudit("Failed Email Login", "auth", `Unknown email login attempt for: ${email}`, "blocked");
-      return { success: false, error: "No account found with this email address. Please sign up." };
+      logAudit("Failed Email Login", "auth", `Unapproved email login attempt for: ${email}`, "blocked");
+      return { success: false, error: "Access is restricted to approved accounts. Contact your administrator." };
+    }
+    if (user.password && pass !== user.password) {
+      logAudit("Failed Email Login", "auth", `Incorrect password for: ${email}`, "blocked");
+      return { success: false, error: "Incorrect password." };
     }
     setCurrentUserId(user.id);
+    setIsLoggedIn(true);
     logAudit("Email Login", "auth", `User logged in with email: ${email}`);
     return { success: true };
   };
 
-  const signup = (name: string, email: string, _pass: string, role: UserRole = "manager") => {
-    const exists = users.some((u) => u.email.toLowerCase() === email.toLowerCase());
-    if (exists) {
-      return { success: false, error: "An account with this email already exists." };
-    }
-    const newUser: UserAccount = {
-      id: `user-${Date.now()}`,
-      email,
-      name,
-      role,
-      avatarUrl: `https://api.dicebear.com/7.x/avataaars/svg?seed=${encodeURIComponent(name)}`,
-      authProvider: "email",
-      is2FAEnabled: false,
-      pinCode: "1234",
-      createdAt: new Date().toISOString(),
-      lastLogin: new Date().toISOString(),
-      permissions: DEFAULT_PERMISSIONS[role] || DEFAULT_PERMISSIONS.manager,
+  // Self-service sign-up is disabled: this app is invite-only. Only an
+  // existing administrator can grant access to a new person (see createUser).
+  const signup = (_name: string, _email: string, _pass: string, _role: UserRole = "manager") => {
+    return {
+      success: false,
+      error: "Self-service sign-up is disabled. Access is invite-only — ask your administrator to create an account for you.",
     };
-    setUsers((prev) => [...prev, newUser]);
-    setCurrentUserId(newUser.id);
-    logAudit("Account Registration", "auth", `Registered new account: ${name} (${email}) with role: ${role}`);
-    return { success: true };
   };
 
   const switchUser = (userId: string) => {
     const target = users.find((u) => u.id === userId);
     if (target) {
       setCurrentUserId(target.id);
+      setIsLoggedIn(true);
       logAudit("Switch User Session", "auth", `Switched active session to ${target.name} (${target.role})`);
     }
   };
 
   const logout = () => {
     logAudit("User Sign Out", "auth", `Signed out from session: ${currentUser.name}`);
-    // Switch to viewer or first user in list
-    const viewer = users.find((u) => u.role === "viewer") || users[0];
-    setCurrentUserId(viewer.id);
+    setIsLoggedIn(false);
   };
 
   const updateUserRoleAndPermissions = (
@@ -343,6 +338,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
       authProvider: user.authProvider || "email",
       is2FAEnabled: user.is2FAEnabled ?? false,
       pinCode: user.pinCode || "1234",
+      password: user.password,
       createdAt: new Date().toISOString(),
       lastLogin: "Never",
       permissions: user.permissions || DEFAULT_PERMISSIONS[role],
@@ -379,7 +375,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
       value={{
         currentUser,
         users,
-        isLoggedIn: true,
+        isLoggedIn,
         privacyMaskEnabled,
         togglePrivacyMask,
         isAppLocked,

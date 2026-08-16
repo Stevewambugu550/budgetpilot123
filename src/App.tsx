@@ -21,7 +21,7 @@ import { SecurityLockScreen } from "./components/SecurityLockScreen";
 import { useAuth } from "./context/AuthContext";
 
 export default function App() {
-  const { currentUser, isAppLocked } = useAuth();
+  const { currentUser, isAppLocked, isLoggedIn } = useAuth();
 
   const [data, setData] = useState<HouseholdData>(() =>
     loadHouseholdData(DEFAULT_HOUSEHOLD_DATA)
@@ -64,6 +64,16 @@ export default function App() {
     setQuickAddCategoryId(categoryId);
     setIsQuickAddOpen(true);
   };
+
+  // Access gate: nothing about the app is rendered until an approved
+  // account has signed in. Access is invite-only (see AuthContext).
+  if (!isLoggedIn) {
+    return (
+      <div className="min-h-screen bg-slate-950 text-slate-100 flex items-center justify-center font-sans">
+        <AuthModal isOpen={true} onClose={() => {}} dismissible={false} />
+      </div>
+    );
+  }
 
   return (
     <div className="min-h-screen bg-slate-950 text-slate-100 flex flex-col font-sans selection:bg-emerald-500 selection:text-slate-950">

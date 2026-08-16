@@ -28,6 +28,7 @@ export interface UserAccount {
   is2FAEnabled: boolean;
   twoFactorSecret?: string;
   pinCode?: string;
+  password?: string;
   createdAt: string;
   lastLogin: string;
   permissions: UserPermissions;

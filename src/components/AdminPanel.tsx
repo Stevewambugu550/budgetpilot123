@@ -60,6 +60,7 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({ data, onUpdateData }) =>
   const [newUserName, setNewUserName] = useState("");
   const [newUserEmail, setNewUserEmail] = useState("");
   const [newUserRole, setNewUserRole] = useState<UserRole>("editor");
+  const [newUserPassword, setNewUserPassword] = useState("");
 
   // Audit log search & filter
   const [auditFilter, setAuditFilter] = useState<string>("all");
@@ -81,14 +82,16 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({ data, onUpdateData }) =>
 
   const handleCreateNewUser = (e: React.FormEvent) => {
     e.preventDefault();
-    if (!newUserName || !newUserEmail) return;
+    if (!newUserName || !newUserEmail || !newUserPassword) return;
     createUser({
       name: newUserName,
       email: newUserEmail,
       role: newUserRole,
+      password: newUserPassword,
     });
     setNewUserName("");
     setNewUserEmail("");
+    setNewUserPassword("");
     setIsNewUserModalOpen(false);
   };
 
@@ -868,6 +871,22 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({ data, onUpdateData }) =>
                   <option value="student">Student</option>
                   <option value="admin">Super Admin</option>
                 </select>
+              </div>
+
+              <div>
+                <label className="block text-slate-300 font-medium mb-1">Password</label>
+                <input
+                  type="text"
+                  required
+                  minLength={6}
+                  placeholder="Set a password for this person to sign in with"
+                  value={newUserPassword}
+                  onChange={(e) => setNewUserPassword(e.target.value)}
+                  className="w-full bg-slate-800 border border-slate-700 rounded-xl px-3 py-2 text-white"
+                />
+                <p className="text-[11px] text-slate-500 mt-1">
+                  This is the only way this person can access the app — access is invite-only.
+                </p>
               </div>
 
               <div className="flex justify-end gap-2 pt-3 border-t border-slate-800">

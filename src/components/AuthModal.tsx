@@ -6,7 +6,6 @@ import {
   User,
   Shield,
   ShieldCheck,
-  Sparkles,
   ArrowRight,
   CheckCircle2,
   AlertCircle,
@@ -22,12 +21,15 @@ interface AuthModalProps {
   isOpen: boolean;
   onClose: () => void;
   initialTab?: "signin" | "signup" | "personas";
+  /** When false, hides the close button — used as a mandatory access gate. */
+  dismissible?: boolean;
 }
 
 export const AuthModal: React.FC<AuthModalProps> = ({
   isOpen,
   onClose,
   initialTab = "signin",
+  dismissible = true,
 }) => {
   const {
     currentUser,
@@ -76,41 +78,21 @@ export const AuthModal: React.FC<AuthModalProps> = ({
     }, 400);
   };
 
-  const handleSignup = (e: React.FormEvent) => {
-    e.preventDefault();
-    setErrorMessage("");
-    if (!name || !email || !password) {
-      setErrorMessage("Please fill in all required fields.");
-      return;
-    }
-    if (password.length < 6) {
-      setErrorMessage("Password must be at least 6 characters.");
-      return;
-    }
-    setIsLoading(true);
-    setTimeout(() => {
-      const res = signup(name, email, password, role);
-      setIsLoading(false);
-      if (res.success) {
-        setSuccessMessage("Account created successfully!");
-        setTimeout(() => {
-          onClose();
-        }, 600);
-      } else {
-        setErrorMessage(res.error || "Signup failed.");
-      }
-    }, 400);
-  };
 
   const handleGoogleClick = (googleEmail: string, googleName?: string) => {
+    setErrorMessage("");
     setIsLoading(true);
     setTimeout(() => {
-      loginWithGoogle(googleEmail, googleName);
+      const res = loginWithGoogle(googleEmail, googleName);
       setIsLoading(false);
-      setSuccessMessage(`Connected as ${googleEmail}`);
-      setTimeout(() => {
-        onClose();
-      }, 500);
+      if (res.success) {
+        setSuccessMessage(`Connected as ${googleEmail}`);
+        setTimeout(() => {
+          onClose();
+        }, 500);
+      } else {
+        setErrorMessage(res.error || "Google sign-in failed.");
+      }
     }, 500);
   };
 
@@ -122,13 +104,15 @@ export const AuthModal: React.FC<AuthModalProps> = ({
       >
         {/* Header with background glow */}
         <div className="relative p-6 bg-gradient-to-br from-slate-900 via-slate-800 to-slate-900 border-b border-slate-800">
-          <button
-            id="close-auth-modal-btn"
-            onClick={onClose}
-            className="absolute top-4 right-4 p-1.5 text-slate-400 hover:text-white rounded-lg hover:bg-slate-800 transition-colors"
-          >
-            <X className="w-5 h-5" />
-          </button>
+          {dismissible && (
+            <button
+              id="close-auth-modal-btn"
+              onClick={onClose}
+              className="absolute top-4 right-4 p-1.5 text-slate-400 hover:text-white rounded-lg hover:bg-slate-800 transition-colors"
+            >
+              <X className="w-5 h-5" />
+            </button>
+          )}
 
           <div className="flex items-center gap-3">
             <div className="w-11 h-11 rounded-xl bg-gradient-to-tr from-emerald-500 to-teal-400 flex items-center justify-center text-slate-950 font-bold shadow-lg shadow-emerald-500/20">
@@ -136,10 +120,10 @@ export const AuthModal: React.FC<AuthModalProps> = ({
             </div>
             <div>
               <h2 className="text-lg font-bold text-white tracking-tight">
-                Household Security Vault
+                BudgetPilot Access
               </h2>
               <p className="text-xs text-slate-400">
-                Multi-User Access & Role-Based Security
+                Invite-only &middot; Approved accounts only
               </p>
             </div>
           </div>
@@ -172,7 +156,7 @@ export const AuthModal: React.FC<AuthModalProps> = ({
                   : "text-slate-400 hover:text-slate-200"
               }`}
             >
-              Create Account
+              Request Access
             </button>
             <button
               id="tab-personas-btn"
@@ -305,7 +289,6 @@ export const AuthModal: React.FC<AuthModalProps> = ({
                 <div>
                   <div className="flex items-center justify-between text-xs mb-1">
                     <label className="font-medium text-slate-300">Password</label>
-                    <span className="text-[11px] text-slate-500">Default PIN: 1234</span>
                   </div>
                   <div className="relative">
                     <Lock className="w-4 h-4 absolute left-3 top-2.5 text-slate-400" />
@@ -341,104 +324,62 @@ export const AuthModal: React.FC<AuthModalProps> = ({
             </div>
           )}
 
-          {/* SIGN UP VIEW */}
+          {/* REQUEST ACCESS VIEW (self-service sign-up is disabled) */}
           {tab === "signup" && (
-            <form onSubmit={handleSignup} className="space-y-3">
-              <div>
-                <label className="block text-xs font-medium text-slate-300 mb-1">
-                  Full Name
-                </label>
-                <div className="relative">
-                  <User className="w-4 h-4 absolute left-3 top-2.5 text-slate-400" />
-                  <input
-                    id="signup-name-input"
-                    type="text"
-                    required
-                    placeholder="e.g. Stephen Ngatia"
-                    value={name}
-                    onChange={(e) => setName(e.target.value)}
-                    className="w-full bg-slate-800 border border-slate-700 rounded-xl pl-9 pr-3 py-2 text-xs text-white placeholder-slate-500 focus:outline-none focus:border-emerald-500"
-                  />
-                </div>
+            <div className="space-y-4">
+              <div className="p-4 bg-slate-800/60 border border-slate-700/60 rounded-xl text-center space-y-2">
+                <Shield className="w-8 h-8 text-emerald-400 mx-auto" />
+                <h3 className="text-sm font-bold text-white">Access is invite-only</h3>
+                <p className="text-xs text-slate-400">
+                  Self-service sign-up is disabled. Only accounts approved by a household
+                  administrator can access this app. Ask your administrator to create an
+                  account for you from the Admin Panel, or use a Demo Profile below to explore.
+                </p>
               </div>
 
-              <div>
-                <label className="block text-xs font-medium text-slate-300 mb-1">
-                  Email Address
-                </label>
-                <div className="relative">
-                  <Mail className="w-4 h-4 absolute left-3 top-2.5 text-slate-400" />
-                  <input
-                    id="signup-email-input"
-                    type="email"
-                    required
-                    placeholder="stephenngatia443@gmail.com"
-                    value={email}
-                    onChange={(e) => setEmail(e.target.value)}
-                    className="w-full bg-slate-800 border border-slate-700 rounded-xl pl-9 pr-3 py-2 text-xs text-white placeholder-slate-500 focus:outline-none focus:border-emerald-500"
-                  />
-                </div>
-              </div>
-
-              <div>
-                <label className="block text-xs font-medium text-slate-300 mb-1">
-                  Household Role & Permission Tier
-                </label>
-                <select
-                  id="signup-role-select"
-                  value={role}
-                  onChange={(e) => setRole(e.target.value as UserRole)}
-                  className="w-full bg-slate-800 border border-slate-700 rounded-xl px-3 py-2 text-xs text-white focus:outline-none focus:border-emerald-500"
-                >
-                  <option value="admin">Super Admin (Full Control, Master Security & Audits)</option>
-                  <option value="manager">Household Manager (Manage Budgets, Bills, Members)</option>
-                  <option value="editor">Financial Editor (Add Transactions, View Goals)</option>
-                  <option value="viewer">Read-Only Viewer (View Dashboards & Reports)</option>
-                  <option value="auditor">Auditor (Compliance & Data Verification)</option>
-                  <option value="student">Student (Track Personal Spending & Goals)</option>
-                </select>
-              </div>
-
-              <div>
-                <label className="block text-xs font-medium text-slate-300 mb-1">
-                  Secure Password / PIN
-                </label>
-                <div className="relative">
-                  <Lock className="w-4 h-4 absolute left-3 top-2.5 text-slate-400" />
-                  <input
-                    id="signup-password-input"
-                    type={showPassword ? "text" : "password"}
-                    required
-                    placeholder="Minimum 6 characters or PIN"
-                    value={password}
-                    onChange={(e) => setPassword(e.target.value)}
-                    className="w-full bg-slate-800 border border-slate-700 rounded-xl pl-9 pr-10 py-2 text-xs text-white placeholder-slate-500 focus:outline-none focus:border-emerald-500"
-                  />
-                  <button
-                    type="button"
-                    onClick={() => setShowPassword(!showPassword)}
-                    className="absolute right-3 top-2.5 text-slate-400 hover:text-white"
-                  >
-                    {showPassword ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
-                  </button>
-                </div>
-              </div>
-
-              <div className="p-3 bg-slate-800/60 border border-slate-700/60 rounded-xl text-[11px] text-slate-400 flex items-center gap-2">
-                <Shield className="w-4 h-4 text-emerald-400 flex-shrink-0" />
-                <span>Protected by 256-bit client enclave encryption & role verification.</span>
-              </div>
-
-              <button
-                id="submit-signup-btn"
-                type="submit"
-                disabled={isLoading}
-                className="w-full py-2.5 bg-emerald-600 hover:bg-emerald-500 text-white rounded-xl text-xs font-semibold shadow-md shadow-emerald-900/30 transition-all flex items-center justify-center gap-2"
+              <form
+                onSubmit={(e) => {
+                  e.preventDefault();
+                  setErrorMessage(signup(name, email, password, role).error || "Self-service sign-up is disabled.");
+                }}
+                className="space-y-3 opacity-50 pointer-events-none select-none"
+                aria-disabled="true"
               >
-                <Sparkles className="w-4 h-4" />
-                <span>{isLoading ? "Creating Profile..." : "Create Account & Access Enclave"}</span>
-              </button>
-            </form>
+                <div>
+                  <label className="block text-xs font-medium text-slate-300 mb-1">
+                    Full Name
+                  </label>
+                  <div className="relative">
+                    <User className="w-4 h-4 absolute left-3 top-2.5 text-slate-400" />
+                    <input
+                      type="text"
+                      disabled
+                      placeholder="e.g. Stephen Ngatia"
+                      value={name}
+                      onChange={(e) => setName(e.target.value)}
+                      className="w-full bg-slate-800 border border-slate-700 rounded-xl pl-9 pr-3 py-2 text-xs text-white placeholder-slate-500"
+                    />
+                  </div>
+                </div>
+
+                <div>
+                  <label className="block text-xs font-medium text-slate-300 mb-1">
+                    Email Address
+                  </label>
+                  <div className="relative">
+                    <Mail className="w-4 h-4 absolute left-3 top-2.5 text-slate-400" />
+                    <input
+                      type="email"
+                      disabled
+                      placeholder="you@example.com"
+                      value={email}
+                      onChange={(e) => setEmail(e.target.value)}
+                      className="w-full bg-slate-800 border border-slate-700 rounded-xl pl-9 pr-3 py-2 text-xs text-white placeholder-slate-500"
+                    />
+                  </div>
+                </div>
+              </form>
+            </div>
           )}
 
           {/* FAST 1-CLICK PERSONAS */}

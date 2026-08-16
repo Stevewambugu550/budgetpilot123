@@ -269,13 +269,37 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     return { success: true };
   };
 
-  // Self-service sign-up is disabled: this app is invite-only. Only an
-  // existing administrator can grant access to a new person (see createUser).
-  const signup = (_name: string, _email: string, _pass: string, _role: UserRole = "manager") => {
-    return {
-      success: false,
-      error: "Self-service sign-up is disabled. Access is invite-only — ask your administrator to create an account for you.",
+  const signup = (name: string, email: string, pass: string, role: UserRole = "manager") => {
+    const key = email.trim().toLowerCase();
+    if (!name.trim() || !key || !pass) {
+      return { success: false, error: "Please fill in your name, email, and password." };
+    }
+    if (pass.length < 6) {
+      return { success: false, error: "Password must be at least 6 characters." };
+    }
+    const exists = users.some((u) => u.email.toLowerCase() === key);
+    if (exists) {
+      return { success: false, error: "An account with this email already exists. Try signing in instead." };
+    }
+    const newUser: UserAccount = {
+      id: `user-${Date.now()}`,
+      email: key,
+      name: name.trim(),
+      role,
+      avatarUrl: `https://api.dicebear.com/7.x/avataaars/svg?seed=${encodeURIComponent(name)}`,
+      authProvider: "email",
+      is2FAEnabled: false,
+      pinCode: "1234",
+      password: pass,
+      createdAt: new Date().toISOString(),
+      lastLogin: new Date().toISOString(),
+      permissions: DEFAULT_PERMISSIONS[role] || DEFAULT_PERMISSIONS.manager,
     };
+    setUsers((prev) => [...prev, newUser]);
+    setCurrentUserId(newUser.id);
+    setIsLoggedIn(true);
+    logAudit("Account Registration", "auth", `Registered new account: ${name} (${key}) with role: ${role}`);
+    return { success: true };
   };
 
   const switchUser = (userId: string) => {

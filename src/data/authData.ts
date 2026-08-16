@@ -1,5 +1,18 @@
 import { UserAccount, UserRole, UserPermissions, AuditLogEntry, SecuritySettings, AppNotification } from "../types";
 
+const STUDENT_NAMES = [
+  "Ava Thompson",
+  "Liam Chen",
+  "Noah Kariuki",
+  "Mia Rodriguez",
+  "Ethan Patel",
+  "Zoe Njoroge",
+  "Lucas Silva",
+  "Grace Achieng",
+  "Benjamin Okoro",
+  "Isabella Muthoni",
+];
+
 export const DEFAULT_PERMISSIONS: Record<UserRole, UserPermissions> = {
   admin: {
     canEditBudget: true,
@@ -55,6 +68,17 @@ export const DEFAULT_PERMISSIONS: Record<UserRole, UserPermissions> = {
     canExportData: true,
     canManageSecurity: false,
     canUseAiAdvisor: false,
+  },
+  student: {
+    canEditBudget: false,
+    canAddTransactions: true,
+    canDeleteRecords: false,
+    canManageMembers: false,
+    canViewReports: true,
+    canAccessAdminPanel: false,
+    canExportData: false,
+    canManageSecurity: false,
+    canUseAiAdvisor: true,
   },
 };
 
@@ -114,6 +138,23 @@ export const INITIAL_USERS: UserAccount[] = [
     lastLogin: "2026-08-10T09:40:00Z",
     permissions: DEFAULT_PERMISSIONS.viewer,
   },
+  ...STUDENT_NAMES.map((name, i) => {
+    const n = i + 1;
+    const slug = name.toLowerCase().replace(/\s+/g, ".");
+    return {
+      id: `user-student-${n}`,
+      email: `${slug}@student.budgetpilot.app`,
+      name,
+      role: "student" as UserRole,
+      avatarUrl: `https://api.dicebear.com/7.x/avataaars/svg?seed=${encodeURIComponent(name)}`,
+      authProvider: "demo" as const,
+      is2FAEnabled: false,
+      pinCode: "1234",
+      createdAt: "2026-04-01T09:00:00Z",
+      lastLogin: "Never",
+      permissions: DEFAULT_PERMISSIONS.student,
+    };
+  }),
 ];
 
 export const INITIAL_AUDIT_LOGS: AuditLogEntry[] = [

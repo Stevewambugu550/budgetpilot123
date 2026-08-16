@@ -306,6 +306,8 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({ data, onUpdateData }) =>
                               ? "bg-blue-950 text-blue-300 border border-blue-700"
                               : u.role === "editor"
                               ? "bg-emerald-950 text-emerald-300 border border-emerald-700"
+                              : u.role === "student"
+                              ? "bg-amber-950 text-amber-300 border border-amber-700"
                               : "bg-slate-800 text-slate-300 border border-slate-700"
                           }`}
                         >
@@ -754,6 +756,7 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({ data, onUpdateData }) =>
                   <option value="editor">Financial Editor</option>
                   <option value="viewer">Read-Only Viewer</option>
                   <option value="auditor">Auditor</option>
+                  <option value="student">Student</option>
                 </select>
               </div>
 
@@ -862,6 +865,7 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({ data, onUpdateData }) =>
                   <option value="manager">Household Manager</option>
                   <option value="editor">Financial Editor</option>
                   <option value="viewer">Read-Only Viewer</option>
+                  <option value="student">Student</option>
                   <option value="admin">Super Admin</option>
                 </select>
               </div>

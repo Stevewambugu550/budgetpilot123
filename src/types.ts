@@ -4,7 +4,7 @@ export type FrequencyType = "monthly" | "bi-weekly" | "weekly" | "yearly" | "irr
 
 export type PaymentMethod = "Card" | "Debit" | "Cash" | "Bank Transfer" | "Mobile Money" | "Other";
 
-export type UserRole = "admin" | "manager" | "editor" | "viewer" | "auditor";
+export type UserRole = "admin" | "manager" | "editor" | "viewer" | "auditor" | "student";
 
 export interface UserPermissions {
   canEditBudget: boolean;
